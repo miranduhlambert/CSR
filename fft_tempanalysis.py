@@ -22,7 +22,7 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
 
             # print(f"Reading line: {line.strip()}")
 
-            if marker_found: # snippet to get all the data part the marker 
+            if marker_found: # snippet to get all the data part the marker, do not have to set marker_found == True because it is defined with  
         
                 columns = line.split()
 
@@ -31,31 +31,28 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
                 if len(columns) > max(product_flag_index, product_column_index):
         
                     product_flag = columns[product_flag_index]  # Extract the fifth column
-                    
-                    # Debugging output to trace the product flag
-   
-                    #print(f"Product flag found: {product_flag}")
-
-                    #extract data 
-                    if product_flag in data_vectors:
-                            product_data = columns[product_column_index]
-                            data_vectors[product_flag].append(float(product_data))
+                    product_data= columns[product_column_index]
+                    #print("Product flag found:", product_flag)  # Debug print
+                    #print("Keys in data_vectors:", data_vectors.keys())  # Debug print
+                    #extract data
+                    #Call check_product_flag to get the product flag key
+                    product_flag_key=check_product_flag(product_flag) #call to check product flag
+                    if product_flag_key in data_vectors:                  # if product flag key is found
+                            #Append data to the corresponding key in data_vectors
+                            data_vectors[product_flag_key].append(float(product_data))
 
 
             elif marker in line:
                 marker_found=True
                 # print(f"Marker found: {marker}")
-   
 
-def process_line(line):
-    print(line.strip())
 
-def check_product_flag(product_flag, data_vectors, line):
+def check_product_flag(product_flag):
 
     # Define the sequences you are looking for
     sequences = {
-        'tesu': '00111100000000000100000001000000 ', #bit 14 product flag
-        'taicu': '00111100000000001000000001000000',  #bit 15 product flag
+        'tesu': '00111100000000000100000001000000 ', #bit 14 product flag, 
+        'taicu': '00111100000000001000000001000000',  #bit 15 product flag; GF1 ACC Hk N ICU temps
         'tisu': '00111100000000010000000001000000',  #bit 16 product flag
         'tcicu': '00111100000100000000000001000000'   #bit 20 product flag
         # Add more sequences as needed
@@ -63,10 +60,10 @@ def check_product_flag(product_flag, data_vectors, line):
 
     for key, sequence in sequences.items():
         if product_flag == sequence:
-            data_vectors[key].append(line.strip())
-            return True  # If you find a match, exit the loop and return True
+           # print("Data vectors after appending:", data_vectors)  # Debugging statement
+            return key  # If you find a match, exit the loop and return True
 
-    return False  # If no match is found, return False'
+    return None  # If no match is found, return None'
 
     # Debugging output to trace the product flag check
 
@@ -97,6 +94,7 @@ filename=r'C:\data\AHK1A_2020-07-01_C_04.txt' #the r with the prefix denotes the
 marker='# End of YAML header'
 product_flag_index= 5                        # Adjust this index if the product flag is in a different column
 product_column_index= 7                      # Adjust this index to the column where product data is located
+time_vector_index= 0                         # Subtract the starting value of the file per every time value to get seconds passed
 
 
 # Initialize empty lists for storing data
