@@ -1,20 +1,33 @@
-#Level-1A Data Level-1A data is the result of “non-destructive” processing applied to Level-0 data. Sensor calibration factors are applied to convert the binary encoded measurements to engineering units. Where necessary,
-#time tag integer second ambiguity is resolved and data is time tagged to the respective satellite receiver clock time.
-#Editing and quality control flags are added, and the data is reformatted for further processing. This is considered
-#“non-destructive” processing, meaning that the Level-1A data is reversible to Level-0, except for bad data packets.
-#This level also includes the ancillary data products needed for processing to the next data level.
-
 #Imports
 import matplotlib
-matplotlib.use('TkAgg')  # Use TkAgg backend
 import matplotlib.pyplot as plt
-
+matplotlib.use('TkAgg')  # Use TkAgg backend
 import numpy as np
-#Function for filtering datato Bypass Yaml Header marker
+import glob 
 
+
+#Function that checks the Product Flag Sequences for Vectorizing data
+def check_product_flag(product_flag):
+    # Define the sequences you are looking for
+    sequences = {
+        'tesu': '00111100000000000100000001000000', #bit 14 product flag; Unknown on Offred; TSU_Y+
+        'taicu':'00111100000000001000000001000000',  #bit 15 product flag; GF1 ACC Hk N ICU temps; TICUN
+        'tisu': '00111100000000010000000001000000',  #bit 16 product flag; Unknown on Offred; TSU_Y-
+        'tcicu':'00111100000100000000000001000000'   #bit 20 product flag; GF1 ACC Hk R ICU temps ; TICUR
+        }
+    #Using the key in the defined sequences, if the porduct flag is in the key return key 
+    for key in sequences:
+        if product_flag in sequences[key]:
+            # If you find a match, exit the loop and return True
+            return key
+    #if no match is found, return None
+    return None
+
+#Function for filtering data Bypass Yaml Header marker
 def process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors):
 
     marker_found= False
+    reference_time_seconds= None
 
     with open(filename,'r') as file:
 
@@ -31,19 +44,23 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
                 # Ensure the line has at least 5 columns to avoid index errors
                 
                 if len(columns) > max(product_flag_index, product_column_index):
-        
+                    
                     product_flag = columns[product_flag_index]  # Extract the fifth column
                     product_data= columns[product_column_index]
-                    #print("Product flag found:", product_flag)  # Debug print
-                    #print("Keys in data_vectors:", data_vectors.keys())  # Debug print
-                    #extract data
+
                     #Call check_product_flag to get the product flag key
-                    product_flag_key=check_product_flag(product_flag) #call to check product flag
+                    product_flag_key=check_product_flag(product_flag) 
+
                     if product_flag_key in data_vectors:                  # if product flag key is found
                             #Append data to the corresponding key in data_vectors
                             data_vectors[product_flag_key].append(float(product_data))
+
+                            if reference_time_seconds is None:
+                                #Extract the reference time from the first line of each file
+                                reference_time_seconds= float(columns[0])
+
                             time_ms = float(columns[1]) / 1000  # Convert milliseconds to seconds
-                            time_seconds = float(columns[0]) - 646833600  # Subtract the reference time point
+                            time_seconds = float(columns[0]) - reference_time_seconds  # Subtract the reference time point
                             time_vectors[product_flag_key].append(time_seconds + time_ms)  # Combine seconds and milliseconds
 
             elif marker in line:
@@ -51,59 +68,35 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
                 # print(f"Marker found: {marker}")
 
 
-def check_product_flag(product_flag):
+#Function that performs the Fast Fourier Transform Analysis and plots the results
+def perform_fft(data_vectors,time_vectors):
 
-    # Define the sequences you are looking for
-    sequences = {
-        'tesu': '00111100000000000100000001000000', #bit 14 product flag, 
-        'taicu':'00111100000000001000000001000000',  #bit 15 product flag; GF1 ACC Hk N ICU temps
-        'tisu': '00111100000000010000000001000000',  #bit 16 product flag
-        'tcicu':'00111100000100000000000001000000'   #bit 20 product flag
-        # Add more sequences as needed
-    }
-
-    for key, sequence in sequences.items():
-        if product_flag == sequence:
-           # print("Data vectors after appending:", data_vectors)  # Debugging statement
-            return key  # If you find a match, exit the loop and return True
-
-    return None  # If no match is found, return None'
-
-    # Debugging output to trace the product flag check
-
-    #print(f"Checking product flag: {product_flag} against {desired_sequence}")
-    #return product_flag == desired_sequence
-
-# Function to process and print the line for debugging
-
-# def process_line(line):
-#     print(f"Processing line: {line.strip()}")
-
-def plot_data_vectors(data_vectors,time_vectors):
-    for product_flag, data in data_vectors.items():
-        if not data:
-            print(f"No data to plot for {product_flag}")
-            continue
-        #Plot the data
-        time_vector = time_vectors[product_flag]
-        plt.figure()
-        plt.plot(time_vector, data, label=product_flag)
-        plt.xlabel('Time of Day (seconds)')
-        plt.ylabel('Temperature (Celsius)')
-        plt.title(f'Product Data Analysis for Product Flag: {product_flag}')
-        plt.legend()
-        plt.show()
-
-def perform_fft(data_vectors):
+    #Define the vector for results 
     fft_results = {}
+
+    #For each product_flag key for columns (data) in data_vectors
     for product_flag, data in data_vectors.items():
-        if not data:
-            continue
-        # Calculate sampling frequency using time vectors
+
+        # Calculate sampling frequency using specified time vector
         time_vector = time_vectors[product_flag]
+
+        if len(time_vector) < 2:
+            print(f"Not enough data points for {product_flag} to perform FFT")
+            continue
+
         sampling_intervals = np.diff(time_vector)
+        if len(sampling_intervals) == 0:
+            print(f"No sampling intervals found for {product_flag}")
+            continue
+
         average_sampling_interval = np.mean(sampling_intervals)
         sampling_frequency = 1 / average_sampling_interval
+
+        print(f"Processing {product_flag}:")
+        print(f"  Number of data points: {len(data)}")
+        print(f"  Number of time points: {len(time_vector)}")
+        print(f"  Average sampling interval: {average_sampling_interval}")
+        print(f"  Sampling frequency: {sampling_frequency}")
 
         # Detrend the data by subtracting the mean
         data_detrended = data - np.mean(data)
@@ -115,15 +108,15 @@ def perform_fft(data_vectors):
         # Save FFT results
         fft_results[product_flag] = (fft_freq, fft_result)
 
+        positive_freqs = fft_freq > 0   
         # Plot FFT results (positive frequencies only)
-        positive_freqs = fft_freq > 0
-        plt.figure()
-        plt.plot(fft_freq[positive_freqs] * 86400, np.abs(fft_result)[positive_freqs])  # Convert to cycles per day
-        plt.xlabel('Frequency (cycles/day)')
-        plt.ylabel('Amplitude')
-        plt.title(f'Frequency Spectrum for {product_flag}')
-        plt.grid(True)
-        plt.show()
+        # plt.figure()
+        # plt.plot(fft_freq[positive_freqs] * 86400, np.abs(fft_result)[positive_freqs])  # Convert to cycles per day
+        # plt.xlabel('Frequency (cycles/day)')
+        # plt.ylabel('Amplitude')
+        # plt.title(f'Frequency Spectrum for {product_flag}')
+        # plt.grid(True)
+        # plt.show()
 
         # Highlight the fundamental frequencies
         max_amplitude_index = np.argmax(np.abs(fft_result)[positive_freqs])
@@ -133,47 +126,165 @@ def perform_fft(data_vectors):
         
     return fft_results
 
+def find_max_temp_per_day(date, data_vectors, time_vectors, max_temps_per_day):
+    
+    for product_flag, time_vector in time_vectors.items():
+        if not time_vector:
+            continue
+        data = data_vectors[product_flag]
+    
+        daily_max_temp = max(data) if data else None # Initialize daily_max_temps for each product_flag
+
+      # Update max_temps_all_files for the corresponding product flag and date
+        if date in max_temps_per_day:
+            max_temps_per_day[date][product_flag] = daily_max_temp
+        else:
+            #initialize the date entry in max_temps_per_day with an empty dictionary
+            max_temps_per_day[date] = {}
+            #Update max_temps_per_day for the corresponding product flag
+            max_temps_per_day[date][product_flag]= daily_max_temp
+    return max_temps_per_day
+
+
+def analyze_files(file_list, marker, product_flag_index, product_column_index):
+
+    nested_data = {
+        'dates': [],
+        'data_vectors': {},
+        'time_vectors': {},
+        'max_temps_per_day': {},
+        'frequencies_per_date': {},
+        'max_temps_all_files': {}
+    }
+
+    for file_name in file_list:
+    # Initialize empty vectors for storing data with corresponding product flag keys
+        #Extract date from filename
+        date=file_name.split('_')[1]
+
+        #Inialize empty dictionaries for each date if they dont exist
+        if date not in nested_data['data_vectors']:
+            nested_data['dates'].append(date)
+            nested_data['data_vectors'][date] = {'tesu': [], 'taicu': [], 'tisu': [], 'tcicu': []}
+            nested_data['time_vectors'][date] = {'tesu': [], 'taicu': [], 'tisu': [], 'tcicu': []}
+            nested_data['max_temps_per_day'][date] = {'tesu': {}, 'taicu': {}, 'tisu': {}, 'tcicu': {}}
+            nested_data['frequencies_per_date'][date] = {'tesu': {}, 'taicu': {}, 'tisu': {}, 'tcicu': {}}
+
+ 
+        #Call the file processing function to organize the data
+        process_file_past_header(file_name, marker, product_flag_index, product_column_index, nested_data['data_vectors'][date], nested_data['time_vectors'][date])
+
+        #Call the function to perform Fast Fourier Transform operations on data
+        fft_results = perform_fft(nested_data['data_vectors'][date], nested_data['time_vectors'][date])
+
+        for product_flag, (fft_freq, fft_result) in fft_results.items():
+            positive_freqs = fft_freq > 0
+            max_amplitude_index = np.argmax(np.abs(fft_result)[positive_freqs])
+            fundamental_frequency = fft_freq[positive_freqs][max_amplitude_index] * 86400
+            print(f"Fundamental frequency for {product_flag} on {date}: {fundamental_frequency:.2f} cycles/day")  # Debug print
+            nested_data['frequencies_per_date'][date][product_flag]=fundamental_frequency
+
+        nested_data['max_temps_per_day']=find_max_temp_per_day(date, nested_data['data_vectors'][date], nested_data['time_vectors'][date], nested_data['max_temps_per_day'])
+
+
+    return nested_data
+
+#Function that plots the data vectors
+def plot_data_vectors(nested_data):
+
+    #for each product flag and data vector in the data vectors
+    for date, product_flags in nested_data['data_vectors'].items():
+
+        for product_flag, data in product_flags.items():
+            #If statement to say that there is no data to plot for a specific product flag
+            if not data:
+                print(f"No data to plot for {product_flag}")
+                continue
+
+            #Use the time vector for the corresponding product flag
+            time_vector = nested_data['time_vectors'][date][product_flag]
+
+            #Plot the data
+            plt.figure()
+            plt.plot(time_vector, data, label=product_flag)
+            plt.xlabel('Time of Day (seconds)')
+            plt.ylabel('Temperature (Celsius)')
+            plt.title(f'{product_flag} data on {date}')
+            plt.legend()
+            plt.grid(True)
+            plt.show()
+
+def plot_frequency_over_time(nested_data):
+    # Extract dates
+    dates = list(nested_data['frequencies_per_date'].keys())
+
+    # Iterate over product flags
+    for product_flag in nested_data['frequencies_per_date'][dates[0]].keys():
+        # Extract frequencies for the current product flag
+        frequencies = [nested_data['frequencies_per_date'][date][product_flag] for date in dates]
+
+        # Plot frequencies over time for the current product flag
+        plt.figure()
+        plt.plot(dates, frequencies, label=product_flag)
+        plt.xlabel('Date')
+        plt.ylabel('Frequency')
+        plt.title(f'{product_flag} Frequency Over Time')
+        plt.legend()
+        plt.show()
+
+def plot_max_temps(nested_data):
+    dates = list(nested_data['max_temps_per_day'].keys())
+    for product_flag in nested_data['max_temps_per_day'][dates[0]].keys():
+        max_temps = [nested_data['max_temps_per_day'][date][product_flag] for date in dates]
+
+        plt.figure()
+        plt.plot(dates, max_temps, label=product_flag)
+        plt.xlabel('Date')
+        plt.ylabel('Max Temperature (Celsius)')
+        plt.title(f'Max Temperature for {product_flag} Over Time')
+        plt.xticks(rotation=45)
+        plt.legend()
+        plt.show()
+
+# def check_flags_in_files(file_list):
+#     flag_sequences = {
+#         'tesu': '00111100000000000100000001000000',
+#         'taicu': '00111100000000001000000001000000',
+#         'tisu': '00111100000000010000000001000000',
+#         'tcicu': '00111100000100000000000001000000'
+#     }
+#     flag_counts = {flag: 0 for flag in flag_sequences}
+#     for file_name in file_list:
+#         print(f"Scanning file for flags: {file_name}")
+#         with open(file_name, 'r') as file:
+#             for line in file:
+#                 for flag, sequence in flag_sequences.items():
+#                     if sequence in line:
+#                         flag_counts[flag] += 1
+    
+#     print("Flag presence in files:")
+#     for flag, count in flag_counts.items():
+#         print(f"  {flag}: {count} occurrences")
+
+
+
 
 #Define Variables for the Data Bypass
 
-filename=r'C:\data\AHK1A_2020-07-01_C_04.txt' #the r with the prefix denotes the absolute path of the file
+file_list = glob.glob(r'C:\data\AHK1A_*.txt') #Adjust file pattern as needed
+print("Files found:")
+print(file_list)
 marker='# End of YAML header'
 product_flag_index= 5                        # Adjust this index if the product flag is in a different column
 product_column_index= 7                      # Adjust this index to the column where product data is located
-time_vector_index= 0                         # Subtract the starting value of the file per every time value to get seconds passed
 
 
-# Initialize empty lists for storing data
-data_vectors = {                            
-    'tesu': [],
-    'taicu': [],
-    'tisu': [],
-    'tcicu': []
-    # Add more product flags as needed
-    }
-time_vectors = {  # Initialize empty time vectors for each product flag
-    'tesu': [],
-    'taicu': [],
-    'tisu': [],
-    'tcicu': []
-}
 
-#Call the function
+#Call the functions to find frequency over time
+# check_flags_in_files(file_list)  # Add this line to check for flag presence in the files
+nested_data = analyze_files(file_list, marker, product_flag_index, product_column_index)
 
-process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors)
-
-#Check if there are any values in 'tesu'
-# if data_vectors['tesu']:
- 
-# print(f"'tesu' has {len(data_vectors['tesu'])}")
-# print(f"'taicu' has {len(data_vectors['taicu'])}")
-# # else:
-# #     print("'tesu' has no values")
-
-# Plot the data
-plot_data_vectors(data_vectors,time_vectors)
-
-#perform fft on data
-fft_results = perform_fft(data_vectors)
-
-
+# Call the functions the plot the data
+#plot_data_vectors(nested_data)
+plot_frequency_over_time(nested_data)
+plot_max_temps(nested_data)
