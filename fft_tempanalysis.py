@@ -62,7 +62,7 @@ def process_file_past_header(date, filename, marker, product_flag_index, product
                             if reference_time_seconds is None:
                                 reference_time_seconds= float(columns[0])
 
-                            time_ms = float(columns[1]) / 1000  # Convert milliseconds to seconds
+                            time_ms = float(columns[1]) / 1000000  # Convert milliseconds to seconds
                             time_seconds = float(columns[0]) - reference_time_seconds  # Subtract the reference time point
                             time_vectors[product_flag_key].append(time_seconds + time_ms)  # Combine seconds and milliseconds
 
@@ -163,30 +163,27 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
 
     return nested_data
 
-#Function that plots the data vectors
 def plot_data_vectors(nested_data):
-
-    #for each product flag and data vector in the data vectors
+    all_times = []
+    all_temperatures = []
+    
+    # Iterate over dates and product flags to collect all time and temperature data
     for date, product_flags in nested_data['data_vectors'].items():
-
-        for product_flag, data in product_flags.items():
-            #If statement to say that there is no data to plot for a specific product flag
-            if not data:
-                print(f"No data to plot for {product_flag}")
-                continue
-
-            #Use the time vector for the corresponding product flag
-            time_vector = nested_data['time_vectors'][date][product_flag]
-
-            #Plot the data
-            plt.figure()
-            plt.plot(time_vector, data, label=product_flag)
-            plt.xlabel('Time of Day (seconds)')
-            plt.ylabel('Temperature (Celsius)')
-            plt.title(f'{product_flag} data on {date}')
-            plt.legend()
-            plt.grid(True)
-            plt.show()
+        for product_flag, temperature_data in product_flags.items():
+            if temperature_data:  # Check if there is data for this product flag
+                all_times.extend(nested_data['time_vectors'][date][product_flag])
+                all_temperatures.extend(temperature_data)
+    
+    # Plotting all temperature data over time
+    plt.figure(figsize=(10, 6))
+    plt.plot(all_times, all_temperatures, marker='o', linestyle='-', color='b', label='Temperature Data')
+    plt.xlabel('Time (seconds)')
+    plt.ylabel('Temperature')
+    plt.title('All Temperature Data Over Time')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 def plot_frequency_over_time(nested_data):
     
@@ -304,6 +301,6 @@ nested_data = analyze_files(file_list, marker, product_flag_index, product_colum
 
 
 # Call the functions the plot the data
-#plot_data_vectors(nested_data)
+plot_data_vectors(nested_data)
 plot_frequency_over_time(nested_data)
 plot_temperature_statistics(nested_data)
