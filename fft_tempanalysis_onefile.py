@@ -1,13 +1,32 @@
 #Imports
 import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import signal
 from scipy.signal import find_peaks
-from astropy.timeseries import LombScargle
+
+#Function that checks the Product Flag Sequences for Vectorizing data
+def check_product_flag(product_flag):
+    # Define the sequences you are looking for
+    sequences = {
+        'tesu': '00111100000000000100000001000000', #bit 14 product flag; Unknown on Offred; TSU_Y+
+        'taicu':'00111100000000001000000001000000',  #bit 15 product flag; GF ACC_ICU temps; TICUN
+        'tisu': '00111100000000010000000001000000',  #bit 16 product flag; Most likely GF1 ACC_Feeu; TSU_Y-
+        }
+    
+    #Using the key in the defined sequences, if the porduct flag is in the key return key 
+    for key in sequences:
+        if product_flag in sequences[key]:
+            # If you find a match, exit the loop and return True
+            return key
+   
+    #if no match is found, return None
+    return None
 
 #Function for filtering data to Bypass Yaml Header marker
 def process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors):
-
+    #Define Variables for Lop Iteration
     marker_found= False
     reference_time_seconds=None
 
@@ -19,143 +38,31 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
         
                 columns = line.split()
 
-                # Ensure the line has at least 5 columns to avoid index errors
+              # Ensure the line has at least 5 columns to avoid index error
                 if len(columns) > max(product_flag_index, product_column_index):
-        
-                    product_flag = columns[product_flag_index]  # Extract the fifth column
-                    product_data= columns[product_column_index]
-                   
-                    #Call check_product_flag to get the product flag key
-                    product_flag_key=check_product_flag(product_flag) 
+                    product_flag = columns[product_flag_index]
+                    product_data = float(columns[product_column_index])
+                    product_flag_key = check_product_flag(product_flag)
 
-                    # if product flag key is found
-                    if product_flag_key in data_vectors:    
-                            
-                                          
-                            #Append data to the corresponding key in data_vectors
-                            data_vectors[product_flag_key].append(float(product_data))
+                    if product_flag_key in data_vectors:
+                        #Append data to the corresponding key in data_vectors
+                        data_vectors[product_flag_key].append(float(product_data))
 
-                            #Extract the reference time from the first line of each file
-                            if reference_time_seconds is None:
-                                reference_time_seconds= float(columns[0])
-                            time_ms = float(columns[1]) / 1000000  # Convert milliseconds to seconds
-                            time_seconds = float(columns[0]) - reference_time_seconds  # Subtract the reference time point
-                            time_vectors[product_flag_key].append(time_seconds + time_ms)  # Combine seconds and milliseconds
+                        if reference_time_seconds is None:
+                            reference_time_seconds = float(columns[0])
+
+                        time_ms = float(columns[1]) / 1000000  # Convert microseconds to seconds
+                        time_seconds = float(columns[0]) - reference_time_seconds
+                        time_vectors[product_flag_key].append(time_seconds + time_ms)  # Combine seconds and milliseconds
 
             elif marker in line:
                 marker_found=True
-                # print(f"Marker found: {marker}")
-    # Sort the time vectors and corresponding data
-    sorted_time_vectors, sorted_data_vectors = sort_time_vectors_and_data(time_vectors, data_vectors)
-
-    return sorted_time_vectors, sorted_data_vectors
-
-def sort_time_vectors_and_data(time_vectors, data_vectors):
-    sorted_time_vectors = {}
-    sorted_data_vectors = {}
-
-    for product_flag in time_vectors:
-        time_vector = np.array(time_vectors[product_flag])
-        data_vector = np.array(data_vectors[product_flag])
-
-        # Sort time vector and data vector
-        sorted_indices = np.argsort(time_vector)
-        sorted_time_vector = time_vector[sorted_indices]
-        sorted_data_vector = data_vector[sorted_indices]
-
-        sorted_time_vectors[product_flag] = sorted_time_vector.tolist()
-        sorted_data_vectors[product_flag] = sorted_data_vector.tolist()
-
-        # Check if time vector is evenly spaced
-        sampling_intervals = np.diff(sorted_time_vector)
-        average_interval = np.mean(sampling_intervals)
-        is_evenly_spaced = np.allclose(sampling_intervals, average_interval, rtol=1e-5, atol=1e-8)
-
-
-        print(f"Product Flag: {product_flag}")
-        print(f"Is evenly spaced: {is_evenly_spaced}")
-        if not is_evenly_spaced:
-            print(f"First 10 sampling intervals: {sampling_intervals[:10]}")
-            print(f"Last 10 sampling intervals: {sampling_intervals[-10:]}")
-            print(f"Total number of intervals: {len(sampling_intervals)}")
-
-    return sorted_time_vectors, sorted_data_vectors
-
-def check_product_flag(product_flag):
-
-    # Define the sequences you are looking for
-    sequences = {
-        'tesu': '00111100000000000100000001000000', #bit 14 product flag, 
-        'taicu':'00111100000000001000000001000000',  #bit 15 product flag; GF1 ACC Hk N ICU temps
-        'tisu': '00111100000000010000000001000000',  #bit 16 product flag
-        # Add more sequences as needed
-    }
-
-    for key, sequence in sequences.items():
-        # If you find a match, exit the loop and return True
-        if product_flag == sequence:
-            return key  
-
-    return None  # If no match is found, return None'
-
-
-def plot_data_vectors(data_vectors,time_vectors):
-    for product_flag, data in data_vectors.items():
-        if not data:
-            print(f"No data to plot for {product_flag}")
-            continue
-        #Plot the data
-        time_vector = time_vectors[product_flag]
-        plt.figure()
-        plt.plot(time_vector, data, label=product_flag)
-        plt.xlabel('Time of Day (seconds)')
-        plt.ylabel('Temperature (Celsius)')
-        plt.title(f'Product Data Analysis for Product Flag: {product_flag}')
-        plt.legend()
-        plt.show()
-
-def perform_lomb_scargle(data_vectors, time_vectors):
-    for product_flag, data in data_vectors.items():
-        if not data:
-            continue
-
-        time_vector = np.array(time_vectors[product_flag])
-        data = np.array(data)
-
-        # Normalize time vector to start from zero
-        time_vector_normalized = time_vector - time_vector[0]
-
-        # Compute Lomb-Scargle periodogram
-        ls = LombScargle(time_vector_normalized, data)
-        frequency, power = ls.autopower()
-
-        # Convert frequency to cycles per day or any desired unit
-        frequency_cpd = frequency * 86400  # Example: Convert to cycles per day
-
-        # Calculate amplitude as square root of power (assuming normalized data)
-        amplitude = np.sqrt(power)
-
-        # Plot amplitude versus frequency
-        plt.figure(figsize=(10, 6))
-        plt.plot(frequency_cpd, amplitude)
-        plt.xlabel('Frequency (cycles/day)')
-        plt.ylabel('Amplitude')
-        plt.title(f'Amplitude versus Frequency (Lomb-Scargle) for {product_flag}')
-        plt.grid(True)
-        plt.show()
-
-        # Find peaks in the periodogram
-        peak_indices = np.argsort(amplitude)[-5:]  # Get indices of the top 5 peaks
-        top_frequencies = frequency_cpd[peak_indices]
-        top_amplitudes = amplitude[peak_indices]
-
-        print(f"Top 5 frequencies: {top_frequencies}")
-        print(f"Corresponding amplitudes: {top_amplitudes}")
 
 
 def perform_fft(data_vectors, time_vectors):
     fft_results = {}
-    
+    target_freqs= [2/86400, 15/86400]
+   
     for product_flag, data in data_vectors.items():
         
         if not data:
@@ -166,54 +73,37 @@ def perform_fft(data_vectors, time_vectors):
         data=np.array(data)
         sampling_intervals = np.diff(time_vector)
         average_sampling_interval = np.mean(sampling_intervals)
-        sampling_frequency = 1 / average_sampling_interval
-        
+        sampling_frequency= 1/average_sampling_interval
+        print(f'Sampling Frequency in Cycles/Day for {product_flag} is : {sampling_frequency*86400}')
+    
         # Perform FFT
         fft_result = np.fft.fft(data)
-        fft_freq = np.fft.fftfreq(len(data), d=average_sampling_interval)
+        n=len(data)
+        fft_freq = np.fft.fftfreq(n, d=average_sampling_interval)
+        
+        # Calculate amplitudes and phases
+        amplitude = np.abs(fft_result)
+        phase = np.angle(fft_result)
+        
+        # Print coefficients for closest match to target frequencies
+        for target_freq in target_freqs:
+            closest_idx = np.argmin(np.abs(fft_freq - target_freq))
+            print(f"Product Flag: {product_flag}")
+            print(f"Target Frequency: {target_freq} Hz")
+            print(f"Closest Frequency: {fft_freq[closest_idx]} Hz")
+            print(f"Amplitude: {amplitude[closest_idx]}")
+            print(f"Phase: {phase[closest_idx]}")
+            print(f"FFT Coefficient: {fft_result[closest_idx]}")
+            print("")
 
         # Save FFT results
         fft_results[product_flag] = (fft_freq, fft_result)
-        
-        # Normalize time vector to start from zero
-        time_vector_normalized = time_vector - time_vector[0]
-
-        # Compute Lomb-Scargle periodogram
-        ls = LombScargle(time_vector_normalized, data, normalization='psd', fit_mean=True)
-        frequency, power = ls.autopower()
-
-        # Convert frequency to cycles per day
-        frequency_cpd = frequency * 86400
-
-        # Find peaks in the FFT magnitude spectrum
-        positive_freqs = fft_freq > 0
-        fft_magnitude = np.abs(fft_result)[positive_freqs]
-        fft_peaks, _ = find_peaks(fft_magnitude)
-        fft_peak_freqs = fft_freq[positive_freqs][fft_peaks] * 86400  # Convert to cycles per day
-        fft_peak_magnitudes = fft_magnitude[fft_peaks]
-         
-        # Sort peaks by magnitude and select the top 5
-        top_fft_peaks_indices = np.argsort(fft_magnitude[fft_peaks])[-5:]
-        top_fft_peak_freqs = fft_freq[positive_freqs][fft_peaks][top_fft_peaks_indices] * 86400  # Convert to cycles per day
-        top_fft_peak_magnitudes = fft_magnitude[fft_peaks][top_fft_peaks_indices]
-
-        # Find the top five peaks in the power spectrum
-        top_indices = np.argsort(power)[-5:]  # Get indices of the top 5 values
-        top_frequencies = frequency_cpd[top_indices]
-        top_powers = power[top_indices]
-
-        # Highlight the fundamental frequencies from fft
-        positive_freqs = fft_freq > 0
-        max_amplitude_index = np.argmax(np.abs(fft_result)[positive_freqs])
-        fundamental_frequency = fft_freq[positive_freqs][max_amplitude_index] * 86400  # Convert to cycles per day
-
-        #Compute fundamental frequencies from the Lomb-Scargle method
-        fund_frequency = frequency_cpd[np.argmax(power)]
 
         # Plot FFT results (optional)
         plt.figure(figsize=(14, 10))
-        plt.subplot(2, 1, 1)
-        plt.plot(fft_freq[fft_freq > 0] * 86400, np.abs(fft_result[fft_freq > 0]), label='FFT')  # FFT plot
+        plt.subplot(3, 1, 1)
+        plt.plot(fft_freq[fft_freq > 0]*86400, np.abs(fft_result[fft_freq > 0]), label='FFT')  # FFT plot; 5400 seconds is about the time of one revolution
+        plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
         plt.xscale('log')
         plt.yscale('log')
         plt.xlabel('Frequency (cycles/day)')
@@ -221,27 +111,48 @@ def perform_fft(data_vectors, time_vectors):
         plt.title(f'Frequency Spectrum for {product_flag}')
         plt.grid(True)
         plt.legend()
-        
-        # Plot Lomb-Scargle periodogram
-        plt.subplot(2, 1, 2)
-        plt.plot(frequency_cpd, power, color='blue', label='Lomb-Scargle Periodogram')
+
+        # Perform Welch's method for PSD estimation
+        plt.subplot(3, 1, 2)
+        frequencies, psd = signal.welch(data, fs=sampling_frequency, window='hann', nperseg=len(data))
+        plt.semilogy(frequencies*86400, psd, label='Welch\'s Method')
+        plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
+        plt.xscale('log')
+        plt.yscale('log')
         plt.xlabel('Frequency (cycles/day)')
-        plt.ylabel('Power')
-        plt.title(f'Lomb-Scargle Periodogram for {product_flag}')
+        plt.ylabel('Power Spectral Density')
+        plt.title(f'Power Spectral Density (Welch\'s Method) for {product_flag}')
         plt.grid(True)
         plt.legend()
 
+        #Plot Data
+        plt.subplot(3,1,3)
+        plt.plot(time_vector, data, label=f'Original Data for {product_flag}')
+        plt.xlabel('Time (seconds)')
+        plt.ylabel('Temperature (Celsius)')
+        plt.title(f'Original Data for {product_flag}')
+        plt.legend()
+        plt.grid(True)
+
+        plt.tight_layout()
         plt.show()
         
     return fft_results
 
 #This function takes the values given from the fft_analysis and constructs a sinusoidal model
 def construct_sinusoidal_model(fft_results, time_vectors):
-    sinusoidal_models={}
-
+    sinusoidal_models= {}
+    
     for product_flag, (fft_freq, fft_result) in fft_results.items():
-
+        
+        print(f"Processing Product Flag: {product_flag}")
+        
         if not fft_result.any():
+            print(f"No FFT result for {product_flag}")
+            continue
+
+        if product_flag not in time_vectors:
+            print(f"No time vector for {product_flag}")
             continue
 
         time_vector = np.array(time_vectors[product_flag])  # Ensure time_vector is a numpy array
@@ -265,10 +176,24 @@ def construct_sinusoidal_model(fft_results, time_vectors):
 
         # Save the reconstructed signal
         sinusoidal_models[product_flag] = abs(reconstructed_signal)
+
+          # Debugging print to show structure of sinusoidal_models
+        print("Debugging: Structure of sinusoidal_models")
+        for key, value in sinusoidal_models.items():
+            print(f"Product Flag: {key}")
+            print(f"Reconstructed Signal: {value}")
+            print(f"Length of Reconstructed Signal: {len(value)}")
+            print("")
+
     return sinusoidal_models
 
 def plot_comparison(data_vectors, sinusoidal_models, time_vectors):
     for product_flag in data_vectors.keys():
+        
+        if product_flag not in sinusoidal_models:
+            print(f"No sinusoidal model for {product_flag}")
+            continue
+        
         original_data = data_vectors[product_flag]
         reconstructed_signal = sinusoidal_models[product_flag]
         time_vector = time_vectors[product_flag]
@@ -283,6 +208,7 @@ def plot_comparison(data_vectors, sinusoidal_models, time_vectors):
 
         plt.figure(figsize=(14, 10))
         plt.plot(time_vector, original_data, label=f'Original data for {product_flag}')
+        print(f'plotting original data')
         plt.plot(time_vector, reconstructed_signal, label=f'Reconstructed data for {product_flag}')
         plt.xlabel('Time (seconds)')
         plt.ylabel('Temperature (Celsius)')
@@ -315,22 +241,43 @@ time_vectors = {  # Initialize empty time vectors for each product flag
     'tisu': [],
 }
 
-
 #Call the function
-sorted_time_vectors, sorted_data_vectors=process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors)
+process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors)
 
-# Plot the data
-plot_data_vectors(sorted_data_vectors,sorted_time_vectors)
+# Skipping Filter data vectors and time vectors for each product flag
+# for key in data_vectors:
+#     data_vectors[key] = data_vectors[key][::2]  # Skip every other data point
+#     time_vectors[key] = time_vectors[key][::2]  # Skip corresponding time points
+
+# Averaging Filter data vectors and time vectors for each product flag
+for key in data_vectors:
+    averaged_data = []
+    averaged_time = []
+
+    for i in range(0, len(data_vectors[key]), 2):
+        # Average two consecutive data points
+        avg_data = (data_vectors[key][i] + data_vectors[key][i + 1]) / 2.0
+        avg_time = (time_vectors[key][i] + time_vectors[key][i + 1]) / 2.0
+
+        averaged_data.append(avg_data)
+        averaged_time.append(avg_time)
+
+    # Replace original data vectors and time vectors with averaged data
+    data_vectors[key] = averaged_data
+    time_vectors[key] = averaged_time
+    
+print(f'The mean of tesu data is: {np.average(data_vectors['tesu'])}')
+print(f'The mean of taicu data is: {np.average(data_vectors['taicu'])}')
+print(f'The mean of tisu data is: {np.average(data_vectors['tisu'])}')
 
 #perform fft on data
-fft_results = perform_fft(sorted_data_vectors, sorted_time_vectors)
+fft_results = perform_fft(data_vectors, time_vectors)
+print(fft_results['taicu'])
 
-#perform lomb-scargle analysis
-perform_lomb_scargle(data_vectors, time_vectors)
 #construct sinusoidal model
-sinusoidal_models=construct_sinusoidal_model(fft_results, sorted_time_vectors)
+sinusoidal_models=construct_sinusoidal_model(fft_results, time_vectors)
 
 #plot sinusoidal model and data vectors form comparison
-plot_comparison(sorted_data_vectors, sinusoidal_models, sorted_time_vectors)
+plot_comparison(data_vectors, sinusoidal_models, time_vectors)
 
 

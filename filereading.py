@@ -46,7 +46,7 @@ with open(input_filename, 'r') as input_file:
                     product_flag = columns[product_flag_index]
                     product_flag_key = check_product_flag(product_flag)
                     
-                    if product_flag_key:
+                    if product_flag_key=='tisu':
                         product_data = columns[product_column_index]
                         time_referenced=current_time_combined-reference_s_ms_combined
                         # Calculate the interval since the last same product flag
@@ -58,7 +58,7 @@ with open(input_filename, 'r') as input_file:
                         # Update the last seen time for the current product flag
                         last_seen_times[product_flag_key] = current_time_combined
 
-                        # Format the interval string
+                        # Format the interval stringS
                         interval_str = f"{interval_since_last:.6f}" if interval_since_last is not None else "N/A"
 
                         # Convert and format the data as required
