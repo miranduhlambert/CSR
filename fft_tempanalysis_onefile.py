@@ -45,7 +45,7 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
                     product_flag_key = check_product_flag(product_flag)
 
                     if product_flag_key in data_vectors:
-                        #Append data to the corresponding key in data_vectors
+                        #Append data to the corresponding key in data_vectors    
                         data_vectors[product_flag_key].append(float(product_data))
 
                         if reference_time_seconds is None:
@@ -61,7 +61,7 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
 
 def perform_fft(data_vectors, time_vectors):
     fft_results = {}
-    target_freqs= [2/86400, 15/86400]
+    target_freqs= [1/86400, 2/86400, 6/86400, 8/86400, 10/86400, 15/86400, 30/86400, 45/86400]
    
     for product_flag, data in data_vectors.items():
         
@@ -84,6 +84,10 @@ def perform_fft(data_vectors, time_vectors):
         # Calculate amplitudes and phases
         amplitude = np.abs(fft_result)
         phase = np.angle(fft_result)
+
+        # Extract the DC component (A_0)
+        A_0 = fft_result[0].real / n
+        print(f"DC Component (A_0) for {product_flag}: {A_0}")
         
         # Print coefficients for closest match to target frequencies
         for target_freq in target_freqs:
@@ -104,6 +108,7 @@ def perform_fft(data_vectors, time_vectors):
         plt.subplot(3, 1, 1)
         plt.plot(fft_freq[fft_freq > 0]*86400, np.abs(fft_result[fft_freq > 0]), label='FFT')  # FFT plot; 5400 seconds is about the time of one revolution
         plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
+        plt.axvline(x=sampling_frequency*86400/2, color='g', linestyle='--', label=f'Nyquist Frequency: {sampling_frequency*(24*3600/2)} Hz')
         plt.xscale('log')
         plt.yscale('log')
         plt.xlabel('Frequency (cycles/day)')
@@ -117,6 +122,7 @@ def perform_fft(data_vectors, time_vectors):
         frequencies, psd = signal.welch(data, fs=sampling_frequency, window='hann', nperseg=len(data))
         plt.semilogy(frequencies*86400, psd, label='Welch\'s Method')
         plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
+        plt.axvline(x=sampling_frequency*86400/2, color='g', linestyle='--', label=f'Nyquist Frequency: {sampling_frequency*(24*3600/2)} Hz')
         plt.xscale('log')
         plt.yscale('log')
         plt.xlabel('Frequency (cycles/day)')
@@ -177,13 +183,13 @@ def construct_sinusoidal_model(fft_results, time_vectors):
         # Save the reconstructed signal
         sinusoidal_models[product_flag] = abs(reconstructed_signal)
 
-          # Debugging print to show structure of sinusoidal_models
-        print("Debugging: Structure of sinusoidal_models")
-        for key, value in sinusoidal_models.items():
-            print(f"Product Flag: {key}")
-            print(f"Reconstructed Signal: {value}")
-            print(f"Length of Reconstructed Signal: {len(value)}")
-            print("")
+        # Debugging print to show structure of sinusoidal_models
+        # print("Debugging: Structure of sinusoidal_models")
+        # for key, value in sinusoidal_models.items():
+        #     print(f"Product Flag: {key}")
+        #     print(f"Reconstructed Signal: {value}")
+        #     print(f"Length of Reconstructed Signal: {len(value)}")
+        #     print("")
 
     return sinusoidal_models
 
@@ -216,6 +222,7 @@ def plot_comparison(data_vectors, sinusoidal_models, time_vectors):
         plt.legend()  # Add legend
         plt.grid(True)
         plt.show()
+
 
         sinusoidal_models[product_flag] = reconstructed_signal
 
@@ -265,10 +272,6 @@ for key in data_vectors:
     # Replace original data vectors and time vectors with averaged data
     data_vectors[key] = averaged_data
     time_vectors[key] = averaged_time
-    
-print(f'The mean of tesu data is: {np.average(data_vectors['tesu'])}')
-print(f'The mean of taicu data is: {np.average(data_vectors['taicu'])}')
-print(f'The mean of tisu data is: {np.average(data_vectors['tisu'])}')
 
 #perform fft on data
 fft_results = perform_fft(data_vectors, time_vectors)
