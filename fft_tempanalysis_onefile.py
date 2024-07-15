@@ -2,9 +2,11 @@
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
 from scipy import signal
 from scipy.signal import find_peaks
+
 
 #Function that checks the Product Flag Sequences for Vectorizing data
 def check_product_flag(product_flag):
@@ -100,13 +102,25 @@ def perform_fft(data_vectors, time_vectors):
             print(f"FFT Coefficient: {fft_result[closest_idx]}")
             print("")
 
-        # Save FFT results
+        # Save FFT results in Code
         fft_results[product_flag] = (fft_freq, fft_result)
+
+        # Create a DataFrame for the FFT results
+
+        fft_df = pd.DataFrame({
+            'Frequency (Cycles/Day)': fft_results[product_flag][0] * 86400,
+            'Amplitude': np.abs(fft_results[product_flag][1]),
+            'Phase(Radians)': np.angle(fft_results[product_flag][1])
+        })
+        
+        # Save the DataFrame to a text file (CSV format)
+        fft_df.to_csv(f'fft_{product_flag}_results.csv', index=False)
+
 
         # Plot FFT results (optional)
         plt.figure(figsize=(14, 10))
-        plt.subplot(3, 1, 1)
-        plt.plot(fft_freq[fft_freq > 0]*86400, np.abs(fft_result[fft_freq > 0]), label='FFT')  # FFT plot; 5400 seconds is about the time of one revolution
+        plt.subplot(4, 1, 1)
+        plt.plot(fft_freq[fft_freq > 0]*86400, np.abs(fft_result[fft_freq > 0]), 'or', label='FFT')  # FFT plot; 5400 seconds is about the time of one revolution
         plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
         plt.axvline(x=sampling_frequency*86400/2, color='g', linestyle='--', label=f'Nyquist Frequency: {sampling_frequency*(24*3600/2)} Hz')
         plt.xscale('log')
@@ -117,10 +131,20 @@ def perform_fft(data_vectors, time_vectors):
         plt.grid(True)
         plt.legend()
 
+        #Plot Frequency Versus Phase
+        plt.subplot(4,1,2)
+        plt.plot(fft_freq[fft_freq > 0]*86400, phase[fft_freq>0], 'or')
+        plt.xscale('log')
+        plt.xlabel('Frequency (cycles/day)')
+        plt.ylabel('Phase Angle')
+        plt.title(f'Frequency Versus Phase {product_flag}')
+        plt.grid(True)
+        plt.legend()
+
         # Perform Welch's method for PSD estimation
-        plt.subplot(3, 1, 2)
+        plt.subplot(4, 1, 3)
         frequencies, psd = signal.welch(data, fs=sampling_frequency, window='hann', nperseg=len(data))
-        plt.semilogy(frequencies*86400, psd, label='Welch\'s Method')
+        plt.semilogy(frequencies*86400, psd, 'or', label='Welch\'s Method')
         plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
         plt.axvline(x=sampling_frequency*86400/2, color='g', linestyle='--', label=f'Nyquist Frequency: {sampling_frequency*(24*3600/2)} Hz')
         plt.xscale('log')
@@ -132,8 +156,8 @@ def perform_fft(data_vectors, time_vectors):
         plt.legend()
 
         #Plot Data
-        plt.subplot(3,1,3)
-        plt.plot(time_vector, data, label=f'Original Data for {product_flag}')
+        plt.subplot(4,1,4)
+        plt.plot(time_vector, data, 'or', label=f'Original Data for {product_flag}')
         plt.xlabel('Time (seconds)')
         plt.ylabel('Temperature (Celsius)')
         plt.title(f'Original Data for {product_flag}')
@@ -142,6 +166,7 @@ def perform_fft(data_vectors, time_vectors):
 
         plt.tight_layout()
         plt.show()
+
         
     return fft_results
 

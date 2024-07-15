@@ -6,6 +6,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 #This function Transforms the Complex Coefficients into Simple Sinusoidal Fourier Series Constant
 def compute_fourier_coeffs(fft_freq, fft_result, target_frequencies,L):
@@ -83,25 +84,25 @@ for product_flag, (fft_freq, fft_result) in fft_results.items():
     reconstructed_signal = reconstruct_signal(A_0[product_flag], A_n, B_n, target_frequencies, time_vector, L)
 
     # Plot the reconstructed signal
-    plt.figure(figsize=(14, 7))
-    plt.plot(time_vector, reconstructed_signal, label=f'Reconstructed Signal for {product_flag}')
-    plt.xlabel('Time (days)')
-    plt.ylabel('Amplitude')
-    plt.title(f'Reconstructed Signal for {product_flag}')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    # plt.figure(figsize=(14, 7))
+    # plt.plot(time_vector, reconstructed_signal, 'or', label=f'Reconstructed Signal for {product_flag}')
+    # plt.xlabel('Time (days)')
+    # plt.ylabel('Amplitude')
+    # plt.title(f'Reconstructed Signal for {product_flag}')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.show()
 
 #Let's Construct a Synthetic time Series 
 
 #Choose 2/day and 1/rev as the fundamental frequencies
 synthetic_freqs=[2/86400, 15/86400]
 
-#Arbitrarily Choose Amplitudes for Experimentation Purposes
-synthetic_amplitudes= [1200, 750]
+#Choose some constants
+a_n= [-0.2, -0.1]
 
-#Choose Synthetic Phase Shifts 
-synthetic_phase_shifts=[np.pi*3/4, np.pi/2] 
+#Choose some more constacts
+b_n=[0.2,0.1] 
 
 # Create synthetic time series
 synthetic_signal = np.zeros_like(time_vector, dtype=np.float64)
@@ -111,11 +112,11 @@ A_0=22.0
 
 #Add the DC component into the Signal
 synthetic_signal+=A_0
-for freq, amp, phase in zip(synthetic_freqs, synthetic_amplitudes, synthetic_phase_shifts):
-    synthetic_signal += amp * np.cos(2 * np.pi * freq * time_vector - phase) 
+for freq, amp_sin, amp_cos in zip(synthetic_freqs, a_n, b_n):
+    synthetic_signal += amp_sin * np.sin(2 * np.pi * freq * time_vector)+amp_cos*np.cos(2*np.pi*freq*time_vector) 
 # Plot the synthetic signal
 plt.figure(figsize=(14, 7))
-plt.plot(time_vector, synthetic_signal, label='Synthetic Signal')
+plt.plot(time_vector, synthetic_signal, 'or', label='Synthetic Signal')
 plt.xlabel('Time (seconds)')
 plt.ylabel('Amplitude')
 plt.title('Synthetic Signal')
@@ -125,7 +126,7 @@ plt.show()
 
 # Perform FFT on synthetic signal
 fft_result_synthetic = np.fft.fft(synthetic_signal)
-fft_freq_synthetic = np.fft.fftfreq(len(time_vector), d=4.8)  # Sampling interval of 4.8 seconds
+fft_freq_synthetic = np.fft.fftfreq(len(time_vector), d=1)  # Sampling interval of 1 second
 
 # Filter only positive frequencies
 positive_freq_idxs = np.where(fft_freq_synthetic > 0)
@@ -134,14 +135,28 @@ fft_result_synthetic = fft_result_synthetic[positive_freq_idxs]
 
 # Plot the FFT result (magnitude spectrum)
 plt.figure(figsize=(14, 7))
-plt.plot(fft_freq_synthetic*86400, np.abs(fft_result_synthetic))
+plt.plot(fft_freq_synthetic*86400, np.abs(fft_result_synthetic), 'or')
 plt.xscale('log')
 plt.yscale('log')
-plt.xlabel('Frequency (Cycles/Day))')
+plt.xlabel('Frequency (Cycles/Day)')
 plt.ylabel('Amplitude')
 plt.title('FFT of Synthetic Signal')
 plt.grid(True)
 plt.show()
+
+# Create a DataFrame for the FFT results
+fft_df = pd.DataFrame({
+    'Frequency (Cycles/Day)': fft_freq_synthetic*86400,
+    'Amplitude': np.abs(fft_result_synthetic)
+})
+
+# Save the DataFrame to a text file (CSV format)
+fft_df.to_csv('fft_synthetic_results.csv', index=False)
+
+# Optionally, save the DataFrame to a text file (TSV format)
+# fft_df.to_csv('fft_results.tsv', index=False, sep='\t')
+
+
 
 #APPENDIX WITH ALL RELEVANT CONSTANTS FOR TESU DATASET:
     # Sampling Frequency in Cycles/Day for tesu is : 18001.61307347744
