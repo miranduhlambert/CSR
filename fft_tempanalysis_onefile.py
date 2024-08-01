@@ -78,9 +78,13 @@ def perform_fft(data_vectors, time_vectors):
         sampling_frequency= 1/average_sampling_interval
         print(f'Sampling Frequency in Cycles/Day for {product_flag} is : {sampling_frequency*86400}')
     
-        # Perform FFT
+       # Apply Bartlett window to the data
+        # window = np.kaiser(len(data),0)
+        # windowed_data = data * window
+        
+        # Perform FFT on windowed data
         fft_result = np.fft.fft(data)
-        n=len(data)
+        n = len(data)
         fft_freq = np.fft.fftfreq(n, d=average_sampling_interval)
         
         # Calculate amplitudes and phases
@@ -109,7 +113,7 @@ def perform_fft(data_vectors, time_vectors):
 
         fft_df = pd.DataFrame({
             'Frequency (Cycles/Day)': fft_results[product_flag][0] * 86400,
-            'Amplitude': np.abs(fft_results[product_flag][1]),
+            'Amplitude': np.abs(fft_results[product_flag][1])*2/n,
             'Phase(Radians)': np.angle(fft_results[product_flag][1])
         })
         
@@ -119,8 +123,7 @@ def perform_fft(data_vectors, time_vectors):
 
         # Plot FFT results (optional)
         plt.figure(figsize=(14, 10))
-        plt.subplot(4, 1, 1)
-        plt.plot(fft_freq[fft_freq > 0]*86400, np.abs(fft_result[fft_freq > 0]), 'or', label='FFT')  # FFT plot; 5400 seconds is about the time of one revolution
+        plt.plot(fft_freq*86400, np.abs(fft_result)*2/n, 'or', label='FFT')  # FFT plot; 5400 seconds is about the time of one revolution
         plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
         plt.axvline(x=sampling_frequency*86400/2, color='g', linestyle='--', label=f'Nyquist Frequency: {sampling_frequency*(24*3600/2)} Hz')
         plt.xscale('log')
@@ -132,8 +135,8 @@ def perform_fft(data_vectors, time_vectors):
         plt.legend()
 
         #Plot Frequency Versus Phase
-        plt.subplot(4,1,2)
-        plt.plot(fft_freq[fft_freq > 0]*86400, phase[fft_freq>0], 'or')
+        plt.figure()
+        plt.plot(fft_freq*86400, phase, 'or')
         plt.xscale('log')
         plt.xlabel('Frequency (cycles/day)')
         plt.ylabel('Phase Angle')
@@ -141,8 +144,8 @@ def perform_fft(data_vectors, time_vectors):
         plt.grid(True)
         plt.legend()
 
-        # Perform Welch's method for PSD estimation
-        plt.subplot(4, 1, 3)
+        # # Perform Welch's method for PSD estimation
+        plt.figure()
         frequencies, psd = signal.welch(data, fs=sampling_frequency, window='hann', nperseg=len(data))
         plt.semilogy(frequencies*86400, psd, 'or', label='Welch\'s Method')
         plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
@@ -155,9 +158,9 @@ def perform_fft(data_vectors, time_vectors):
         plt.grid(True)
         plt.legend()
 
-        #Plot Data
-        plt.subplot(4,1,4)
-        plt.plot(time_vector, data, 'or', label=f'Original Data for {product_flag}')
+        # #Plot Data
+        plt.figure()
+        plt.plot(time_vector, data, label=f'Original Data for {product_flag} GRACE-FO C: 2024-05-01')
         plt.xlabel('Time (seconds)')
         plt.ylabel('Temperature (Celsius)')
         plt.title(f'Original Data for {product_flag}')
@@ -298,14 +301,15 @@ for key in data_vectors:
     data_vectors[key] = averaged_data
     time_vectors[key] = averaged_time
 
+print(len(data_vectors['taicu']))
 #perform fft on data
 fft_results = perform_fft(data_vectors, time_vectors)
-print(fft_results['taicu'])
 
-#construct sinusoidal model
-sinusoidal_models=construct_sinusoidal_model(fft_results, time_vectors)
+# #construct sinusoidal model
+# sinusoidal_models=construct_sinusoidal_model(fft_results, time_vectors)
 
-#plot sinusoidal model and data vectors form comparison
-plot_comparison(data_vectors, sinusoidal_models, time_vectors)
+# #plot sinusoidal model and data vectors form comparison
+# plot_comparison(data_vectors, sinusoidal_models, time_vectors)
+
 
 

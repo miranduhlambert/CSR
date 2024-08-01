@@ -6,15 +6,14 @@ import matplotlib.dates as mdates
 import numpy as np
 import glob 
 from datetime import datetime
+import pandas as pd
 
 
 #Function that checks the Product Flag Sequences for Vectorizing data
 def check_product_flag(product_flag):
     # Define the sequences you are looking for
     sequences = {
-        'tesu': '00111100000000000100000001000000', #bit 14 product flag; Unknown on Offred; TSU_Y+
         'taicu':'00111100000000001000000001000000',  #bit 15 product flag; GF ACC_ICU temps; TICUN
-        'tisu': '00111100000000010000000001000000',  #bit 16 product flag; Most likely GF1 ACC_Feeu; TSU_Y-
         }
     
     #Using the key in the defined sequences, if the porduct flag is in the key return key 
@@ -43,7 +42,7 @@ def check_intervals(time_vectors):
             print(f"Total number of intervals: {len(sampling_intervals)}")
 
 #Function for filtering data Bypass Yaml Header marker
-def process_file_past_header(date, filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors):
+def process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors):
 
     #Define Variables for Loop Iteration
     marker_found= False
@@ -51,8 +50,8 @@ def process_file_past_header(date, filename, marker, product_flag_index, product
     min_interval=0.1
 
     # Temporary storage for averaging
-    temp_data_store = {key: [] for key in ['tesu', 'taicu', 'tisu']}
-    temp_time_store = {key: [] for key in ['tesu', 'taicu', 'tisu']}
+    temp_data_store = {key: [] for key in ['taicu']}
+    temp_time_store = {key: [] for key in ['taicu']}
 
     with open(filename,'r') as file:
 
@@ -92,9 +91,9 @@ def process_file_past_header(date, filename, marker, product_flag_index, product
                             temp_data_store[product_flag_key] = [product_data]
                             temp_time_store[product_flag_key] = [time_total_seconds]
 
-
             elif marker in line:
                 marker_found=True
+
         # Handle remaining data in temporary storage
         for key in temp_data_store:
             if len(temp_data_store[key]) > 0:
@@ -105,9 +104,14 @@ def process_file_past_header(date, filename, marker, product_flag_index, product
 
 
 def perform_fft(date, data_vectors, time_vectors, frequencies_per_date):
-        
+    target_freqs= []    
+    
     for product_flag, data in data_vectors.items():
-        time_vector = time_vectors[product_flag]
+        
+        if not date:
+            continue
+        
+        time_vector = np.array(time_vectors[product_flag])
 
         if len(time_vector) < 2:
             print(f"Not enough data points for {product_flag} on {date} to perform FFT")
@@ -120,23 +124,29 @@ def perform_fft(date, data_vectors, time_vectors, frequencies_per_date):
 
         average_sampling_interval = np.mean(sampling_intervals)
         sampling_frequency = 1 / average_sampling_interval
-        data_detrended = data - np.mean(data)
-        fft_result = np.fft.fft(data_detrended)
-        # fft_freq = np.fft.fftfreq(len(data_detrended), d=average_sampling_interval)
-        fft_freq = np.fft.fftfreq(len(data_detrended), d=average_sampling_interval)
+        print(f'Sampling Frequency in Cycles/Day for {product_flag} is : {sampling_frequency*86400}')
+    
+        #Perform FFT on Data
+        fft_result = np.fft.fft(data)
+        n=len(data)
+        fft_freq = np.fft.fftfreq(n, d=average_sampling_interval)
         frequencies_per_date[product_flag] = (fft_freq, fft_result)
+
+        # Calculate amplitudes and phases
+        amplitude = np.abs(fft_result)
+        phase = np.angle(fft_result)
 
     return frequencies_per_date
 
 
 
-def find_temp_characteristics_per_day(date,data_vectors, time_vectors, max_temps_per_day, min_temps_per_day, mean_temps_per_day):
+def find_temp_characteristics_per_day(data_vectors, time_vectors, max_temps_per_day, min_temps_per_day, mean_temps_per_day):
     
     for product_flag, time_vector in time_vectors.items():
         if not time_vector:
             continue
         data = data_vectors[product_flag]
-        daily_mean_temp=np. mean(data)
+        daily_mean_temp=np.mean(data)
         daily_max_temp = max(data) 
         daily_min_temp= min(data)
 
@@ -166,7 +176,7 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
         date_str = None
         parts = file_name.split('_')
         for part in parts:
-            if part.startswith('2022'): #change this based on the data
+            if part.startswith('2023'): #change this based on the data
                 date_str = part
                 break
         
@@ -180,19 +190,19 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
         #Inialize empty dictionaries for each date if they dont exist
         if date not in nested_data['data_vectors']:
             nested_data['dates'].append(date)
-            nested_data['data_vectors'][date] = {'tesu': [], 'taicu': [], 'tisu': []}
-            nested_data['time_vectors'][date] = {'tesu': [], 'taicu': [], 'tisu': []}
-            nested_data['max_temps_per_day'][date] = {'tesu': {}, 'taicu': {}, 'tisu': {}}
-            nested_data['min_temps_per_day'][date] = {'tesu': {}, 'taicu': {}, 'tisu': {}}
-            nested_data['mean_temps_per_day'][date] = {'tesu': {}, 'taicu': {}, 'tisu': {}}
-            nested_data['frequencies_per_date'][date] = {'tesu': {}, 'taicu': {}, 'tisu': {}}
-            nested_data['fund_freq_per_date'][date]= {'tesu': {}, 'taicu': {}, 'tisu': {}}
+            nested_data['data_vectors'][date] = {'taicu': {}}
+            nested_data['time_vectors'][date] = {'taicu': {}}
+            nested_data['max_temps_per_day'][date] = {'taicu': {}}
+            nested_data['min_temps_per_day'][date] = {'taicu': {}}
+            nested_data['mean_temps_per_day'][date] = { 'taicu': {}}
+            nested_data['frequencies_per_date'][date] = {'taicu': {}}
+            nested_data['fund_freq_per_date'][date]= {'taicu': {}}
            
         #Call the file processing function to organize the data
-        process_file_past_header(date, file_name, marker, product_flag_index, product_column_index, nested_data['data_vectors'][date], nested_data['time_vectors'][date])
+        process_file_past_header(file_name, marker, product_flag_index, product_column_index, nested_data['data_vectors'][date], nested_data['time_vectors'][date])
 
         #Check the Sampling Intervals
-        #check_intervals(nested_data['time_vectors'][date])
+        check_intervals(nested_data['time_vectors'][date])
 
         # Call the perform_fft function
         perform_fft(date, nested_data['data_vectors'][date], nested_data['time_vectors'][date], nested_data['frequencies_per_date'][date])
@@ -285,7 +295,7 @@ def plot_temperature_statistics(nested_data):
     plt.show()
 
 #Define Variables for the Data Analysis
-file_list = glob.glob(r'C:\data\AHK1A 2022_07_01-08_31 D\AHK1A_*') #Adjust file pattern as needed C:\data\AHK1A_*
+file_list = glob.glob(r'C:\data\TAICU AHK1A 2023-08-01-31 C\AHK1A_2023-*-*_C_04.txt') #Adjust file pattern as needed C:\data\AHK1A_*
 marker='# End of YAML header'
 product_flag_index= 5                        # Adjust this index if the product flag is in a different column
 product_column_index= 7                      # Adjust this index to the column where product data is located
@@ -294,5 +304,5 @@ product_column_index= 7                      # Adjust this index to the column w
 nested_data = analyze_files(file_list, marker, product_flag_index, product_column_index)
 
 # Call the functions the plot the data
-#plot_frequency_over_time(nested_data)
+plot_frequency_over_time(nested_data)
 plot_temperature_statistics(nested_data)

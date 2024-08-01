@@ -82,16 +82,34 @@ for product_flag, (fft_freq, fft_result) in fft_results.items():
 
     #Call the Function to Reconstruct the Signal
     reconstructed_signal = reconstruct_signal(A_0[product_flag], A_n, B_n, target_frequencies, time_vector, L)
+    
+    #Perform FFT on Reconstructed Signal
+    fft_result=np.fft.fft(reconstructed_signal)
+    n=len(reconstructed_signal)
+    fft_freq=np.fft.fftfreq(n,d=1)
 
     # Plot the reconstructed signal
-    # plt.figure(figsize=(14, 7))
-    # plt.plot(time_vector, reconstructed_signal, 'or', label=f'Reconstructed Signal for {product_flag}')
-    # plt.xlabel('Time (days)')
-    # plt.ylabel('Amplitude')
-    # plt.title(f'Reconstructed Signal for {product_flag}')
-    # plt.legend()
-    # plt.grid(True)
-    # plt.show()
+    plt.figure(figsize=(14, 7))
+    plt.plot(time_vector, reconstructed_signal, 'or', label=f'Reconstructed Signal for {product_flag}')
+    plt.xlabel('Time (days)')
+    plt.ylabel('Amplitude')
+    plt.title(f'Reconstructed Signal for {product_flag}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    #Plot the fft results of the Constructed Signal
+    plt.figure(figsize=(14, 7))
+    plt.plot(fft_freq*86400, np.abs(fft_result), 'or', label=f'Frequency Domain for {product_flag}')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel('Frequency (Cycles/Day)')
+    plt.ylabel('Amplitude')
+    plt.title(f'Frequency vs Amplitude for {product_flag}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
 
 #Let's Construct a Synthetic time Series 
 
@@ -102,13 +120,13 @@ synthetic_freqs=[2/86400, 15/86400]
 a_n= [-0.2, -0.1]
 
 #Choose some more constacts
-b_n=[0.2,0.1] 
+b_n=[-0.2, -0.1] 
 
 # Create synthetic time series
 synthetic_signal = np.zeros_like(time_vector, dtype=np.float64)
 
 #Choose a DC for the Signal
-A_0=22.0
+A_0=21.3
 
 #Add the DC component into the Signal
 synthetic_signal+=A_0
@@ -124,8 +142,11 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
+# Apply window to the data
+window = np.kaiser(len(synthetic_signal),0)
+windowed_data = synthetic_signal * window
 # Perform FFT on synthetic signal
-fft_result_synthetic = np.fft.fft(synthetic_signal)
+fft_result_synthetic = np.fft.fft(windowed_data)
 fft_freq_synthetic = np.fft.fftfreq(len(time_vector), d=1)  # Sampling interval of 1 second
 
 # Filter only positive frequencies
@@ -135,7 +156,7 @@ fft_result_synthetic = fft_result_synthetic[positive_freq_idxs]
 
 # Plot the FFT result (magnitude spectrum)
 plt.figure(figsize=(14, 7))
-plt.plot(fft_freq_synthetic*86400, np.abs(fft_result_synthetic), 'or')
+plt.plot(fft_freq_synthetic*86400, np.abs(fft_result_synthetic)/86400, 'or')
 plt.xscale('log')
 plt.yscale('log')
 plt.xlabel('Frequency (Cycles/Day)')
@@ -292,36 +313,3 @@ fft_df.to_csv('fft_synthetic_results.csv', index=False)
     # Amplitude: 3.313037648044643
     # Phase: 1.4714100222555904
     # FFT Coefficient: (0.32872876707291154+3.2966886196697294j)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
