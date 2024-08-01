@@ -50,8 +50,8 @@ def process_file_past_header(filename, marker, product_flag_index, data_indices,
 
                     product_flag_key = check_product_flag(product_flag)
                     
-                    if is_fuel_est_file:
-                        if product_flag_key== 'Fuel Mass Estimates'
+                    if product_flag_key== 'Fuel Mass Estimates'
+                        
 
                     if product_flag_key:
                         reg_press = float(columns[data_indices[0]])
