@@ -41,27 +41,24 @@ def reconstruct_signal(A_0, A_n, B_n, target_frequencies, time_vector, L):
 
 # This is where you enter the Constants provided by fft_tempanalysis_onefile
 fft_results = {
-    'tesu': (np.array([2,15]), np.array([ 5.341932763340897+141.98924167308073j,0.4611564998896712+15.486827661637781j])),
+    # 'tesu': (np.array([2,15]), np.array([ 5.341932763340897+141.98924167308073j,0.4611564998896712+15.486827661637781j])),
     'taicu': (np.array([1, 2, 6, 8, 10, 15, 30]), np.array([-777.0011344928828+753.1330223387438j, -967.2329398157063+707.9364057164689j, 283.38875790826006-9.710721789929035j,-209.3126651868165+31.003807286664014j, 111.22818430281612+270.19284713207486j, -132.1153316377344+740.7576529692277j, -165.1638369745679+170.23471930346335j])),
-    'tisu': (np.array([2,15]), np.array([7.18918875439495+145.2885836897493j,3.098025041150109+15.191452847355375j])),
+    # 'tisu': (np.array([2,15]), np.array([7.18918875439495+145.2885836897493j,3.098025041150109+15.191452847355375j]))
 }
 
 #Specify Target Frequencies
 target_frequencies = [1,2,6,8,10,15,30]
 
-#Specify Sampling Interval
-sampling_interval=1/86400
-
 #Enter A_0 as mean of data
 A_0={
-    'tesu': (22.018211967372796),
+    # 'tesu': (22.018211967372796),
     'taicu': (21.33066783664287),
-    'tisu': (22.741420843065665),
+    # 'tisu': (22.741420843065665),
 }
 
 # Define the range of time in seconds
 start_time = 0
-end_time = 86400  # 86400 seconds = 24 hours
+end_time = 2628288 # 86400 seconds = 24 hours ; 604800 seconds= 1 week;  2,628,288 seconds= 1 month
 
 # Create the time vector with a step size of 1 second
 time_vector = np.arange(start_time, end_time + 1, 1)
@@ -88,6 +85,12 @@ for product_flag, (fft_freq, fft_result) in fft_results.items():
     n=len(reconstructed_signal)
     fft_freq=np.fft.fftfreq(n,d=1)
 
+    #Print Out the length of data and the theoretical frequency resolution
+    freq_res=1/(n) #Remember that in this synthetic dataset samples are at every seconds
+    print(f"Length of Data: {n} points")
+    print(f"Sampling Interval:{1} ")
+    print(f"Theoretical Frequency Resolution: {freq_res}")
+
     # Plot the reconstructed signal
     plt.figure(figsize=(14, 7))
     plt.plot(time_vector, reconstructed_signal, 'or', label=f'Reconstructed Signal for {product_flag}')
@@ -96,11 +99,11 @@ for product_flag, (fft_freq, fft_result) in fft_results.items():
     plt.title(f'Reconstructed Signal for {product_flag}')
     plt.legend()
     plt.grid(True)
-    plt.show()
+    plt.show(block=False)
 
     #Plot the fft results of the Constructed Signal
     plt.figure(figsize=(14, 7))
-    plt.plot(fft_freq*86400, np.abs(fft_result), 'or', label=f'Frequency Domain for {product_flag}')
+    plt.plot(fft_freq*86400, np.abs(fft_result)*2/n, 'or', label=f'Frequency Domain for {product_flag}')
     plt.xscale('log')
     plt.yscale('log')
     plt.xlabel('Frequency (Cycles/Day)')
@@ -108,7 +111,7 @@ for product_flag, (fft_freq, fft_result) in fft_results.items():
     plt.title(f'Frequency vs Amplitude for {product_flag}')
     plt.legend()
     plt.grid(True)
-    plt.show()
+    plt.show(block=False)
 
 
 #Let's Construct a Synthetic time Series 
@@ -142,11 +145,11 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
-# Apply window to the data
-window = np.kaiser(len(synthetic_signal),0)
-windowed_data = synthetic_signal * window
+# # Apply window to the data
+# window = np.kaiser(len(synthetic_signal),0)
+# windowed_data = synthetic_signal * window
 # Perform FFT on synthetic signal
-fft_result_synthetic = np.fft.fft(windowed_data)
+fft_result_synthetic = np.fft.fft(synthetic_signal)
 fft_freq_synthetic = np.fft.fftfreq(len(time_vector), d=1)  # Sampling interval of 1 second
 
 # Filter only positive frequencies
@@ -156,7 +159,7 @@ fft_result_synthetic = fft_result_synthetic[positive_freq_idxs]
 
 # Plot the FFT result (magnitude spectrum)
 plt.figure(figsize=(14, 7))
-plt.plot(fft_freq_synthetic*86400, np.abs(fft_result_synthetic)/86400, 'or')
+plt.plot(fft_freq_synthetic*86400, np.abs(fft_result_synthetic)*2/n, 'or')
 plt.xscale('log')
 plt.yscale('log')
 plt.xlabel('Frequency (Cycles/Day)')
@@ -168,7 +171,7 @@ plt.show()
 # Create a DataFrame for the FFT results
 fft_df = pd.DataFrame({
     'Frequency (Cycles/Day)': fft_freq_synthetic*86400,
-    'Amplitude': np.abs(fft_result_synthetic)
+    'Amplitude': np.abs(fft_result_synthetic)*2/n
 })
 
 # Save the DataFrame to a text file (CSV format)

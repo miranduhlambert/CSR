@@ -9,15 +9,14 @@ import re
 
 #Function that checks the Product Flag Sequences for Vectorizing data
 def check_product_flag(product_flag):
-    # Define the sequences you are looking for
-    sequences = {
-        'taicu':'00111100000000001000000001000000',  #bit 15 product flag; GF ACC_ICU temps; TICUN
-        }
-    
-    #Using the key in the defined sequences, if the porduct flag is in the key return key 
-    return next((key for key, value in sequences.items() if product_flag in value), None)
-   
-    #if no match is found, return None
+    # Your existing logic to determine the key from the flag
+    # Add a print statement for debugging
+    # print(f"Checking product flag: {product_flag}")
+    # Return the appropriate key based on the flag
+    # For example:
+    if product_flag == '00111100000000001000000001000000':
+        return 'taicu'
+    # Handle other flags or return None
     return None
 
 def check_intervals(time_vectors):
@@ -36,6 +35,7 @@ def check_intervals(time_vectors):
             print(f"Last 10 sampling intervals: {sampling_intervals[-10:]}")
             print(f"Total number of intervals: {len(sampling_intervals)}")
 
+
 #Function for filtering data Bypass Yaml Header marker
 def process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors):
 
@@ -48,52 +48,64 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
     temp_data_store = {key: [] for key in data_vectors.keys()}
     temp_time_store = {key: [] for key in time_vectors.keys()}
 
+    #Initialize the Product Flag Key
+    product_flag_key=None
+
     with open(filename,'r') as file:
         for line in file:
-            if marker_found: # snippet to get all the data part the marker, do not have to set marker_found == True because it is defined with  
+            # snippet to get all the data part the marker, do not have to set marker_found == True because it is defined with
+            if marker_found:   
                 columns = line.split()
-
-                # Ensure the line has at least 5 columns to avoid index error
+                
                 if len(columns) > max(product_flag_index, product_column_index):
                     product_flag = columns[product_flag_index]
                     product_data = float(columns[product_column_index])
                     product_flag_key = check_product_flag(product_flag)
 
+                    # print(f"Product Flag is {product_flag_key}")
+                    if product_flag_key is None:
+                        # print(f"Product flag key is None for flag: {product_flag}")  # Debugging
+                        continue  # Skip this line if product_flag_key is None
+
                     if product_flag_key in data_vectors:
+                        # print(f"Product Flag: {product_flag_key}, Product Data: {product_data}")  # Debugging
                         if reference_time_seconds is None:
                             reference_time_seconds = float(columns[0])
 
                         time_ms = float(columns[1]) / 1000000  # Convert microseconds to seconds
                         time_seconds = float(columns[0]) - reference_time_seconds
-                        time_total_seconds = time_seconds + time_ms
+                        time_total_seconds = time_seconds + time_ms 
 
                         if len(temp_time_store[product_flag_key]) == 0 or (time_total_seconds - temp_time_store[product_flag_key][-1]) <= min_interval:
-                            # Store data temporarily
                             temp_data_store[product_flag_key].append(product_data)
                             temp_time_store[product_flag_key].append(time_total_seconds)
+                            # print(f"temp time store before averaging {temp_time_store}")
                         else:
-                            # Average the stored data and reset temporary storage
                             avg_data = np.mean(temp_data_store[product_flag_key])
-                            avg_time = np.mean(temp_time_store[product_flag_key])
+                            avg_time=np.mean(temp_time_store[product_flag_key])
+                            # print(f"Time Value after Averaging {avg_time}")
 
                             data_vectors[product_flag_key].append(avg_data)
                             time_vectors[product_flag_key].append(avg_time)
 
-                            # Clear temporary storage and add current data point
                             temp_data_store[product_flag_key] = [product_data]
                             temp_time_store[product_flag_key] = [time_total_seconds]
 
             elif marker in line:
-                marker_found=True
+                marker_found = True
+                print(f"Marker found in line: {line.strip()}")  # Debugging
 
-        # Handle remaining data in temporary storage
+
         for key in temp_data_store:
             if len(temp_data_store[key]) > 0:
                 avg_data = np.mean(temp_data_store[key])
                 avg_time = np.mean(temp_time_store[key])
                 data_vectors[key].append(avg_data)
                 time_vectors[key].append(avg_time)
-
+    # check_intervals(time_vectors)
+    # print(f"Data vectors: {data_vectors}")
+    # print(f"Time vectors: {time_vectors}")    
+    
 
 def perform_fft(date, data_vectors, time_vectors, frequencies_per_date, amplitudes_per_date, phases_per_date):
     for product_flag, data in data_vectors.items():
@@ -167,10 +179,11 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
         'phases_per_day': {}
     }
 
-    #Initializing Aggregation of all data 
-    all_data_vectors = {}
-    all_time_vectors = {}
-
+   # Initializing Aggregation of all data
+    all_data_vectors = []
+    all_time_vectors = []
+    last_end_time = 0  # Initialize to track the end time of the last dataset
+    
     for file_name in file_list:
     # Initialize empty vectors for storing data with coSrresponding product flag keys
         print(f"Processing file: {file_name}")
@@ -185,7 +198,7 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
         # Convert date string to datetime object
         date = datetime.strptime(date_str, '%Y-%m-%d')
 
-        #Inialize empty dictionaries for each date if they dont exist
+        #Initialize empty dictionaries for each date if they dont exist
         if date not in nested_data['data_vectors']:
             nested_data['dates'].append(date)
             nested_data['data_vectors'][date] = {'taicu': []}
@@ -193,35 +206,90 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
             nested_data['max_temps_per_day'][date] = {'taicu': []}
             nested_data['min_temps_per_day'][date] = {'taicu': []}
             nested_data['mean_temps_per_day'][date] = { 'taicu': []}
-            nested_data['frequencies_per_day'][date] = {'taicu': []}
-            nested_data['amplitudes_per_day'][date]= {'taicu': []}
-            nested_data['phases_per_day'][date]= {'taicu': []}
+            nested_data['frequencies_per_day'][date] = { 'taicu': []}
+            nested_data['amplitudes_per_day'][date] = { 'taicu': []}
+            nested_data['phases_per_day'][date] = { 'taicu': []}
+
            
         #Call the file processing function to organize the data
         process_file_past_header(file_name, marker, product_flag_index, product_column_index, nested_data['data_vectors'][date], nested_data['time_vectors'][date])
-
-        #Check the Sampling Intervals
-        check_intervals(nested_data['time_vectors'][date])
-
-        # Perform FFT on Data per day
-        perform_fft(date, nested_data['data_vectors'][date], nested_data['time_vectors'][date], nested_data['frequencies_per_day'][date], nested_data['amplitudes_per_day'], nested_data['phases_per_day'])
-
-        # Aggregate all data
-        for date in nested_data['dates']:
-            for key in nested_data['data_vectors'][date]:
-                if key not in all_data_vectors:
-                    all_data_vectors[key] = []
-                    all_time_vectors[key] = []
+        
+        # Compute temperature characteristics for each day
+        find_temp_characteristics_per_day(
+            nested_data['data_vectors'][date],
+            nested_data['time_vectors'][date],
+            nested_data['max_temps_per_day'][date],
+            nested_data['min_temps_per_day'][date],
+            nested_data['mean_temps_per_day'][date]
+        )
+        
+        # Aggregate data for all days
+        for key in nested_data['data_vectors'][date]:
+            data = nested_data['data_vectors'][date][key]
+            time = nested_data['time_vectors'][date][key]
+            
+            # Adjust time vectors to continue from last_end_time
+            if len(time) > 0:
+                adjusted_time = [t + last_end_time for t in time]
+                all_data_vectors.extend(data)
+                all_time_vectors.extend(adjusted_time)
                 
-                all_data_vectors[key].extend(nested_data['data_vectors'][date][key])
-                all_time_vectors[key].extend(nested_data['time_vectors'][date][key])
+                # Update the last_end_time
+                last_end_time = adjusted_time[-1]
+        
+    # Convert aggregated lists to numpy arrays for easier manipulation
+    print(len(all_data_vectors))
+    print(len(all_time_vectors))
+    all_data_vectors = np.array(all_data_vectors)
+    all_time_vectors = np.array(all_time_vectors)
+    print(all_time_vectors)
+
     # Perform FFT on all aggregated data
-    combined_date = 'All Data Combined'
-    frequencies_per_date, amplitudes_per_date, phases_per_date = perform_fft(
-        combined_date, all_data_vectors, all_time_vectors, 
-        nested_data['frequencies_per_day'], nested_data['amplitudes_per_day'],
-        nested_data['phases_per_day']
-    )
+    sampling_intervals=np.diff(all_time_vectors)
+    average_sampling_interval= np.mean(sampling_intervals)
+    print(sampling_intervals)
+    sampling_frequency=1/4.799
+    n=len(all_data_vectors)
+    fft_result_all_data=np.fft.fft(all_data_vectors)
+    all_frequencies_vectors=np.fft.fftfreq(n,d=average_sampling_interval)
+    all_amplitudes_vectors=np.abs(fft_result_all_data)
+    all_phase_vectors=np.angle(fft_result_all_data)
+
+
+    # Plot FFT results for all aggregated data
+    plt.figure(figsize=(14, 10))
+    plt.plot(all_frequencies_vectors*86400, np.abs(all_amplitudes_vectors)*2/n, 'or', label='FFT')  # FFT plot; 5400 seconds is about the time of one revolution
+    plt.axvline(x=1/np.mean(np.diff(all_time_vectors))*86400, color='r', linestyle='--', label=f'Sampling Frequency: {1 / np.mean(np.diff(all_time_vectors)) * 86400} Hz')
+    plt.axvline(x=1 / (2 * np.mean(np.diff(all_time_vectors))) * 86400, color='g', linestyle='--', label=f'Nyquist Frequency: {1 / (2 * np.mean(np.diff(all_time_vectors)))} Hz')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel('Frequency (cycles/day)')
+    plt.ylabel('Amplitude')
+    plt.title(f'Frequency Spectrum for ')
+    plt.grid(True)
+    plt.legend()
+
+    #Plot Frequency Versus Phase for all aggregated data
+    plt.figure()
+    plt.plot(all_frequencies_vectors*86400, all_phase_vectors, 'or')
+    plt.xscale('log')
+    plt.xlabel('Frequency (cycles/day)')
+    plt.ylabel('Phase Angle')
+    plt.title(f'Frequency Versus Phase')
+    plt.grid(True)
+    plt.legend()
+
+    #Plot Data
+    plt.figure()
+    plt.plot(all_time_vectors, all_data_vectors, label=f'Original Data for GRACE-FO C: 2024-05-01')
+    plt.xlabel('Time (seconds)')
+    plt.ylabel('Temperature (Celsius)')
+    plt.title(f'Original Data for')
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
 
     return nested_data
 

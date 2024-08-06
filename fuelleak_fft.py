@@ -50,7 +50,10 @@ def process_file_past_header(filename, marker, product_flag_index, data_indices,
 
                     product_flag_key = check_product_flag(product_flag)
                     
-                    if product_flag_key== 'Fuel Mass Estimates'
+                    if product_flag_key== 'Fuel Mass Estimates':
+                        fuel_mass_est_A = float(columns[data_indices[0]])
+                        fuel_mass_est_B = float(columns[data_indices[1]])
+                        data_vectors['fuel_est'].append
                         
 
                     if product_flag_key:
@@ -80,11 +83,11 @@ def process_file_past_header(filename, marker, product_flag_index, data_indices,
                 print("Marker found in file")
 
 # Defining Van der Waals modified equation for tanks
-def fTNK(n, R, P, T,a, b, v, n):
+def fTNK(n, R, P, T,a, b, v):
     return (-a*b/(v**2))*n**3 + (a/v)*n**2 - (P*b + R*T)*n + P*v
 
 # Defining the derivative of Van der Waals modified equation for tanks
-def f_primeTNK(n, R, P, T,a, b, v, n):
+def f_primeTNK(n, R, P, T,a, b, v):
     return (-3*a*b/(v**2))*n**2 + (2*a/v)*n - (P*b) - (R*T)
 
 # Newton-Raphson method implementation
@@ -199,14 +202,14 @@ def analyze_files(vndrwl_files, fuel_est_files, marker, product_flag_index, data
 
     def process_vndrwl_file(filename):
 
-        date=extract_date_from_filename
+        date=extract_date_from_filename(filename)
         print('Date Extracted: {date}')
 
         satellite_type=extract_satellite_type_from_filename(filename)
         print('Satellite Marker Extracted: {satellite_type}')
 
         if date not in nested_data[date]:
-                nested_data[date]={}
+            nested_data[date]={}
         
         if satellite_type not in nested_data[date]:
             nested_data[date][satellite_type]= {
@@ -230,9 +233,9 @@ def analyze_files(vndrwl_files, fuel_est_files, marker, product_flag_index, data
         time_vector=[]
 
         #Rewrite the function to specifically process the Van-Der-Waals type file
-        process_file_past_header(filename, marker, product_flag_index, data_indices_vndrwl, time_s_index, time_ms_index, data_vectors, time_vector):
+        process_file_past_header(filename, marker, product_flag_index, data_indices_vndrwl, time_s_index, time_ms_index, data_vectors, time_vector)
 
-        #Avergae the Pressure and Temperature Readings
+        #Average the Pressure and Temperature Readings
         avg_press= np.mean(data_vectors['reg_press'])
         avg_temp= np.mean(data_vectors['skin_temp'])
 
