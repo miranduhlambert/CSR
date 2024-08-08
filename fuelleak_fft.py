@@ -35,7 +35,8 @@ def process_file_past_header(filename, marker, product_flag_index, data_indices,
 
     # Initialize pressure storage
     last_pressure_values = {'1': None, '2': None}  # Assuming tanks are numbered 1 and 2
-
+    last_pressure_times = {'1': None, '2': None}  # Store the corresponding times for pressure values
+    
     with open(filename,'r') as file:
         for line in file:
             line=line.strip()
@@ -57,13 +58,9 @@ def process_file_past_header(filename, marker, product_flag_index, data_indices,
                                 reference_time_seconds = float(columns[time_s_index])
                         time_ms = float(columns[time_ms_index]) / 1000000
                         time_seconds = float(columns[time_s_index]) - reference_time_seconds
-                        time_combined = time_seconds + time_ms
+                        last_pressure_times[tank_num] = time_seconds + time_ms
 
-                        data_vectors[f'tank{tank_num}']['press_time'].append(time_combined)
-                        data_vectors[f'tank{tank_num}']['tank_press'].append(last_pressure_values[tank_num]['tank_press'])
-                        data_vectors[f'tank{tank_num}']['reg_press'].append(last_pressure_values[tank_num]['reg_press'])
-
-                        print(f"Updated pressure values for tank {tank_num}: {last_pressure_values[tank_num]}")
+                        # print(f"Updated pressure values for tank {tank_num}: {last_pressure_values[tank_num]}")
                     elif product_flag_key == 'Temperatures':  # Check if this is a temperature line
                         if last_pressure_values[tank_num] is not None:
                             skin_temp = float(columns[data_indices[0]])
@@ -72,7 +69,8 @@ def process_file_past_header(filename, marker, product_flag_index, data_indices,
                             # Use the last seen pressure values
                             tank_press = last_pressure_values[tank_num]['tank_press']
                             reg_press = last_pressure_values[tank_num]['reg_press']
-                                
+                            press_time = last_pressure_times[tank_num]
+
                             if reference_time_seconds is None:
                                 reference_time_seconds = float(columns[time_s_index])
                                 
@@ -80,17 +78,20 @@ def process_file_past_header(filename, marker, product_flag_index, data_indices,
                             time_seconds = float(columns[time_s_index]) - reference_time_seconds
                             time_combined = time_seconds + time_ms  # Combine seconds and milliseconds
 
-                            # Append data
+                             # Append temperature data
                             data_vectors[f'tank{tank_num}']['temp_time'].append(time_combined)
                             data_vectors[f'tank{tank_num}']['skin_temp'].append(skin_temp)
                             data_vectors[f'tank{tank_num}']['adap_temp'].append(adap_temp)
+
+                            # Append the pressure data corresponding to the last pressure before this temperature
+                            data_vectors[f'tank{tank_num}']['press_time'].append(press_time)
                             data_vectors[f'tank{tank_num}']['tank_press'].append(tank_press)
                             data_vectors[f'tank{tank_num}']['reg_press'].append(reg_press)
-                            time_vector.append(time_combined)
+
 
                             # Debugging prints
-                            print(f"Appended time_combined: {time_combined}")
-                            print(f"Appended data for tank {tank_num}: Temp={skin_temp}, Adap Temp={adap_temp}, Tank Press={tank_press}, Reg Press={reg_press}, Time={time_combined}")
+                            # print(f"Appended time_combined: {time_combined}")
+                            # print(f"Appended data for tank {tank_num}: Temp={skin_temp}, Adap Temp={adap_temp}, Tank Press={tank_press}, Reg Press={reg_press}, Time={time_combined}")
 
             elif marker in line:
                 marker_found=True
@@ -125,85 +126,114 @@ def extract_satellite_type_from_filename(filename):
     return match.group(1) if match else None
 
 
-def perform_fft(data_vectors, time_vector):
+def perform_fft(nested_data):
     fft_results = {}
    
-    for product_flag, data in data_vectors.items():
-        
-        if not data:
-            print(f"No data for product flag {product_flag}")
-            continue
-        
-        # Calculate sampling frequency using time vectors
-        time_vector = np.array(time_vector)
-        data=np.array(data)
-        sampling_intervals = np.diff(time_vector)
-        average_sampling_interval = np.mean(sampling_intervals)
-        sampling_frequency= 1/average_sampling_interval
-        print(f'Sampling Frequency in Cycles/Day for {product_flag} is : {sampling_frequency*86400}')
+    for satellite_type, tanks in nested_data.items():
+        for tank,data in tanks.items():
+            # Process temperature data
+            temp_time = np.array(data['temp_time'])
+            skin_temp = np.array(data['skin_temp'])
+            adap_temp = np.array(data['adap_temp'])
+
+            if len(temp_time)==0:
+                print(f"No Temperature Data for {satellite_type} {tank}")
+                continue
+
+            # Calculate sampling frequency using time vectors
+            sampling_intervals = np.diff(temp_time)
+            average_sampling_interval = np.mean(sampling_intervals)
+            sampling_frequency= 1/average_sampling_interval
+            print(f'Sampling Frequency in Cycles/Day for {satellite_type} {tank} is : {sampling_frequency*86400}')
     
-       # Apply Bartlett window to the data
-        # window = np.kaiser(len(data),0)
-        # windowed_data = data * window
-        
-        # Perform FFT on windowed data
-        fft_result = np.fft.fft(data)
-        n = len(data)
-        fft_freq = np.fft.fftfreq(n, d=average_sampling_interval)
-        
-        # Calculate amplitudes and phases
-        amplitude = np.abs(fft_result)*2/n
-        phase = np.angle(fft_result)
+            #Perform FFT on Skin Temperature Data
+            fft_result_skin= np.fft.fft(skin_temp)
+            n=len(skin_temp)
+            fft_freq=np.fft.fftfreq(n, d=average_sampling_interval)
 
-        # Save FFT results in Code
-        fft_results[product_flag] = (fft_freq, fft_result, amplitude, phase)
+            amplitude_skin=np.abs(fft_result_skin)*2/n
+            phase_skin=np.angle(fft_result_skin)
 
-        # Create a DataFrame for the FFT results
-        fft_df = pd.DataFrame({
-            'Frequency (Cycles/Day)': fft_results[product_flag][0] * 86400,
-            'Amplitude': np.abs(fft_results[product_flag][1])*2/n,
-            'Phase(Radians)': np.angle(fft_results[product_flag][1])
-        })
-        
-        # Save the DataFrame to a text file (CSV format)
-        fft_df.to_csv(f'fft_{product_flag}_results.csv', index=False)
-        print(f"FFT results saved for product_flag {product_flag}")
+            # Save FFT results for skin temperature
+            fft_results[f'{satellite_type}_{tank}_skin_temp'] = (fft_freq, fft_result_skin, amplitude_skin, phase_skin)
 
-        # Plot FFT results (optional)
-        plt.figure(figsize=(14, 10))
-        plt.plot(fft_freq*86400, np.abs(fft_result)*2/n, 'or', label='FFT')  # FFT plot; 5400 seconds is about the time of one revolution
-        plt.axvline(x=sampling_frequency*86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency*(24*3600)} Hz')
-        plt.axvline(x=sampling_frequency*86400/2, color='g', linestyle='--', label=f'Nyquist Frequency: {sampling_frequency*(24*3600/2)} Hz')
-        plt.xscale('log')
-        plt.yscale('log')
-        plt.xlabel('Frequency (cycles/day)')
-        plt.ylabel('Amplitude')
-        plt.title(f'Frequency Spectrum for {product_flag}')
-        plt.grid(True)
-        plt.legend()
+            # Save FFT results in DataFrame
+            fft_df_skin = pd.DataFrame({
+                'Frequency (Cycles/Day)': fft_results[f'{satellite_type}_{tank}_skin_temp'][0] * 86400,
+                'Amplitude': np.abs(fft_results[f'{satellite_type}_{tank}_skin_temp'][1]) * 2 / n,
+                'Phase (Radians)': np.angle(fft_results[f'{satellite_type}_{tank}_skin_temp'][1])
+            })
+            
+            fft_df_skin.to_csv(f'fft_{satellite_type}_{tank}_skin_temp_results.csv', index=False)
+            print(f"FFT results saved for skin temperature of {satellite_type} {tank}")
 
-        #Plot Frequency Versus Phase
-        plt.figure()
-        plt.plot(fft_freq*86400, phase, 'or')
-        plt.xscale('log')
-        plt.xlabel('Frequency (cycles/day)')
-        plt.ylabel('Phase Angle')
-        plt.title(f'Frequency Versus Phase {product_flag}')
-        plt.grid(True)
-        plt.legend()
+            # Plot FFT results for skin temperature
+            plt.figure(figsize=(14, 10))
+            plt.plot(fft_freq * 86400, np.abs(fft_result_skin) * 2 / n, 'or', label='FFT (Skin Temp)')
+            plt.axvline(x=sampling_frequency * 86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency * 86400} cycles/day')
+            plt.axvline(x=sampling_frequency * 86400 / 2, color='g', linestyle='--', label=f'Nyquist Frequency: {sampling_frequency * 86400 / 2} cycles/day')
+            plt.xscale('log')
+            plt.yscale('log')
+            plt.xlabel('Frequency (cycles/day)')
+            plt.ylabel('Amplitude')
+            plt.title(f'Frequency Spectrum for Skin Temperature of {satellite_type} {tank}')
+            plt.grid(True)
+            plt.legend()
 
-        # #Plot Data
-        plt.figure()
-        plt.plot(time_vector, data, label=f'Original Data for {product_flag} GRACE-FO C: 2024-05-01')
-        plt.xlabel('Time (seconds)')
-        plt.ylabel('Temperature (Celsius)')
-        plt.title(f'Original Data for {product_flag}')
-        plt.legend()
-        plt.grid(True)
+            # Plot Frequency Versus Phase for skin temperature
+            plt.figure()
+            plt.plot(fft_freq * 86400, phase_skin, 'or')
+            plt.xscale('log')
+            plt.xlabel('Frequency (cycles/day)')
+            plt.ylabel('Phase Angle')
+            plt.title(f'Frequency Versus Phase for Skin Temperature of {satellite_type} {tank}')
+            plt.grid(True)
+            plt.legend()
 
-        plt.tight_layout()
-        plt.show()
-        print(f"Plots generated for product_flag {product_flag}")
+            # Perform FFT on adap temperature data
+            fft_result_adap = np.fft.fft(adap_temp)
+            amplitude_adap = np.abs(fft_result_adap) * 2 / n
+            phase_adap = np.angle(fft_result_adap)
+
+            # Save FFT results for adap temperature
+            fft_results[f'{satellite_type}_{tank}_adap_temp'] = (fft_freq, fft_result_adap, amplitude_adap, phase_adap)
+
+            # Save FFT results in DataFrame
+            fft_df_adap = pd.DataFrame({
+                'Frequency (Cycles/Day)': fft_results[f'{satellite_type}_{tank}_adap_temp'][0] * 86400,
+                'Amplitude': np.abs(fft_results[f'{satellite_type}_{tank}_adap_temp'][1]) * 2 / n,
+                'Phase (Radians)': np.angle(fft_results[f'{satellite_type}_{tank}_adap_temp'][1])
+            })
+
+            fft_df_adap.to_csv(f'fft_{satellite_type}_{tank}_adap_temp_results.csv', index=False)
+            print(f"FFT results saved for adap temperature of {satellite_type} {tank}")
+
+            # Plot FFT results for adap temperature
+            plt.figure(figsize=(14, 10))
+            plt.plot(fft_freq * 86400, np.abs(fft_result_adap) * 2 / n, 'or', label='FFT (Adap Temp)')
+            plt.axvline(x=sampling_frequency * 86400, color='r', linestyle='--', label=f'Sampling Frequency: {sampling_frequency * 86400} cycles/day')
+            plt.axvline(x=sampling_frequency * 86400 / 2, color='g', linestyle='--', label=f'Nyquist Frequency: {sampling_frequency * 86400 / 2} cycles/day')
+            plt.xscale('log')
+            plt.yscale('log')
+            plt.xlabel('Frequency (cycles/day)')
+            plt.ylabel('Amplitude')
+            plt.title(f'Frequency Spectrum for Adap Temperature of {satellite_type} {tank}')
+            plt.grid(True)
+            plt.legend()
+
+            # Plot Frequency Versus Phase for adap temperature
+            plt.figure()
+            plt.plot(fft_freq * 86400, phase_adap, 'or')
+            plt.xscale('log')
+            plt.xlabel('Frequency (cycles/day)')
+            plt.ylabel('Phase Angle')
+            plt.title(f'Frequency Versus Phase for Adap Temperature of {satellite_type} {tank}')
+            plt.grid(True)
+            plt.legend()
+
+            plt.tight_layout()
+            plt.show()
+            print(f"Plots generated for {satellite_type} {tank}")
         
     return fft_results
 
@@ -243,29 +273,56 @@ def analyze_files(vndrwl_files, marker, product_flag_index, data_indices, tank_n
         nested_data[satellite_type] = data_vectors
     return nested_data
 
+
 def plot_data(data_vectors):
-    for tank, data in data_vectors.items():
-        if len(data['temp_time']) > 0:
-            plt.figure(figsize=(12, 6))
-            plt.subplot(2, 1, 1)
-            plt.plot(data['temp_time'], data['skin_temp'], label=f'Skin Temperature for {tank}')
-            plt.plot(data['temp_time'], data['adap_temp'], label=f'Adap Temperature for {tank}')
-            plt.xlabel('Time (seconds)')
-            plt.ylabel('Temperature (Celsius)')
-            plt.title(f'Temperature Data for {tank}')
-            plt.legend()
+    for satellite_type, tanks in data_vectors.items():
+        for tank, data in tanks.items():
+            # Plot temperature data
+            if len(data['temp_time']) > 0:
+                plt.figure(figsize=(12, 8))
 
-        if len(data['press_time']) > 0:
-            plt.subplot(2, 1, 2)
-            plt.plot(data['press_time'], data['tank_press'], label=f'Tank Pressure for {tank}')
-            plt.plot(data['press_time'], data['reg_press'], label=f'Reg Pressure for {tank}')
-            plt.xlabel('Time (seconds)')
-            plt.ylabel('Pressure (Bar)')
-            plt.title(f'Pressure Data for {tank}')
-            plt.legend()
+                # Plot skin and adap temperatures
+                plt.subplot(4, 1, 1)
+                plt.plot(data['temp_time'], data['skin_temp'], label=f'Skin Temperature for {tank}')
+                plt.plot(data['temp_time'], data['adap_temp'], label=f'Adap Temperature for {tank}')
+                plt.xlabel('Time (seconds)')
+                plt.ylabel('Temperature (Celsius)')
+                plt.title(f'Temperature Data for {tank} on GRACE-FO {satellite_type}')
+                plt.legend()
 
-        plt.tight_layout()
-        plt.show()
+                # Plot average temperature
+                avg_temp = [(skin + adap) / 2 for skin, adap in zip(data['skin_temp'], data['adap_temp'])]
+                plt.subplot(4, 1, 2)
+                plt.plot(data['temp_time'], avg_temp, label=f'Average Temperature for {tank}', color='purple')
+                plt.xlabel('Time (seconds)')
+                plt.ylabel('Average Temperature (Celsius)')
+                plt.title(f'Average Temperature for {tank} on GRACE-FO {satellite_type}')
+                plt.legend()
+
+            # Plot pressure data
+            if len(data['press_time']) > 0:
+                plt.subplot(4, 1, 3)
+                plt.plot(data['press_time'], data['tank_press'], label=f'Tank Pressure for {tank}')
+                plt.plot(data['press_time'], data['reg_press'], label=f'Reg Pressure for {tank}')
+                plt.xlabel('Time (seconds)')
+                plt.ylabel('Pressure (Bar)')
+                plt.title(f'Pressure Data for {tank} on GRACE-FO {satellite_type}')
+                plt.legend()
+
+                # Plot average pressure
+                avg_press = [(tank_p + reg_p) / 2 for tank_p, reg_p in zip(data['tank_press'], data['reg_press'])]
+                plt.subplot(4, 1, 4)
+                plt.plot(data['press_time'], avg_press, label=f'Average Pressure for {tank}', color='orange')
+                plt.xlabel('Time (seconds)')
+                plt.ylabel('Average Pressure (Bar)')
+                plt.title(f'Average Pressure for {tank} on GRACE-FO {satellite_type}')
+                plt.legend()
+
+            plt.tight_layout()
+            plt.show()
+
+
+              
 
 
 #Define Variables for the Data Bypass
@@ -284,6 +341,7 @@ time_vector = []        # Initialize empty time vector, should be the same for e
 # Analyze the files
 nested_data = analyze_files(vndrwl_files, marker, product_flag_index, data_indices_vndrwl, tank_num_index, time_s_index, time_ms_index)
 
-# fft_results = perform_fft(data_vectors, time_vector)
+plot_data(nested_data)
 
-plot_data(nested_data, time_vector)
+fft_results = perform_fft(nested_data)
+
