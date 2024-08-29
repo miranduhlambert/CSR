@@ -37,19 +37,18 @@ def check_intervals(time_vectors):
 
 
 #Function for filtering data Bypass Yaml Header marker
-def process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors):
+def process_file_past_header(filename, marker, product_flag_index, product_column_index, data_vectors, time_vectors, last_end_time):
 
     #Define Variables for Loop Iteration
     marker_found= False
-    reference_time_seconds= None
     min_interval=0.1
+    first_time_in_file= None
+    current_end_time=None
+   
 
-    # Temporary storage for averaging
+    # Temporary storage for averaging redundant recordings
     temp_data_store = {key: [] for key in data_vectors.keys()}
     temp_time_store = {key: [] for key in time_vectors.keys()}
-
-    #Initialize the Product Flag Key
-    product_flag_key=None
 
     with open(filename,'r') as file:
         for line in file:
@@ -68,12 +67,22 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
                         continue  # Skip this line if product_flag_key is None
 
                     if product_flag_key in data_vectors:
+                        #Debugging Print
                         # print(f"Product Flag: {product_flag_key}, Product Data: {product_data}")  # Debugging
-                        if reference_time_seconds is None:
-                            reference_time_seconds = float(columns[0])
+
+                        if first_time_in_file is None:
+                            first_time_in_file= float(columns[0])
+                            time_offset= last_end_time - first_time_in_file
+
+                        #First time in file as: 
+                            # rcvtime_intg:
+                            # comment: 1st column
+                            # coverage_content_type: referenceInformation
+                            # long_name: Integer portion of time, in seconds past 12:00:00 noon of January 1, 2000 in OBC Time
+                            # units: seconds
 
                         time_ms = float(columns[1]) / 1000000  # Convert microseconds to seconds
-                        time_seconds = float(columns[0]) - reference_time_seconds
+                        time_seconds = float(columns[0]) - first_time_in_file
                         time_total_seconds = time_seconds + time_ms 
 
                         if len(temp_time_store[product_flag_key]) == 0 or (time_total_seconds - temp_time_store[product_flag_key][-1]) <= min_interval:
@@ -81,12 +90,12 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
                             temp_time_store[product_flag_key].append(time_total_seconds)
                             # print(f"temp time store before averaging {temp_time_store}")
                         else:
-                            avg_data = np.mean(temp_data_store[product_flag_key])
-                            avg_time=np.mean(temp_time_store[product_flag_key])
-                            # print(f"Time Value after Averaging {avg_time}")
-
-                            data_vectors[product_flag_key].append(avg_data)
-                            time_vectors[product_flag_key].append(avg_time)
+                            if len(temp_data_store[product_flag_key]) > 0:
+                                avg_data = np.mean(temp_data_store[product_flag_key])
+                                avg_time=np.mean(temp_time_store[product_flag_key])
+                                # print(f"Time Value after Averaging {avg_time}")
+                                data_vectors[product_flag_key].append(avg_data)
+                                time_vectors[product_flag_key].append(avg_time)
 
                             temp_data_store[product_flag_key] = [product_data]
                             temp_time_store[product_flag_key] = [time_total_seconds]
@@ -102,9 +111,11 @@ def process_file_past_header(filename, marker, product_flag_index, product_colum
                 avg_time = np.mean(temp_time_store[key])
                 data_vectors[key].append(avg_data)
                 time_vectors[key].append(avg_time)
+    
+        # Update the end time of the current file
+        current_end_time = max([max(times) for times in time_vectors.values()]) if time_vectors else last_end_time    
     # check_intervals(time_vectors)
-    # print(f"Data vectors: {data_vectors}")
-    # print(f"Time vectors: {time_vectors}")    
+    return current_end_time
     
 
 def perform_fft(date, data_vectors, time_vectors, frequencies_per_date, amplitudes_per_date, phases_per_date):
@@ -183,6 +194,7 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
     all_data_vectors = []
     all_time_vectors = []
     last_end_time = 0  # Initialize to track the end time of the last dataset
+    global_reference_time = None
     
     for file_name in file_list:
     # Initialize empty vectors for storing data with coSrresponding product flag keys
@@ -190,7 +202,6 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
         
         # Extract date from filename
         date_str= extract_date_from_filename(file_name)
-        
         if date_str is None:
             print("Date not found in file name:", file_name)
             continue
@@ -212,7 +223,7 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
 
            
         #Call the file processing function to organize the data
-        process_file_past_header(file_name, marker, product_flag_index, product_column_index, nested_data['data_vectors'][date], nested_data['time_vectors'][date])
+        global_reference_time=process_file_past_header(file_name, marker, product_flag_index, product_column_index, nested_data['data_vectors'][date], nested_data['time_vectors'][date], last_end_time)
         
         # Compute temperature characteristics for each day
         find_temp_characteristics_per_day(
@@ -223,19 +234,41 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
             nested_data['mean_temps_per_day'][date]
         )
         
-        # Aggregate data for all days
+    # Aggregate data for all days
+    for date in nested_data['data_vectors']:
         for key in nested_data['data_vectors'][date]:
             data = nested_data['data_vectors'][date][key]
             time = nested_data['time_vectors'][date][key]
             
+            # Check if time and data lengths match
+            if len(time) != len(data):
+                ValueError(f"Time and data length mismatch for {date}, key {key}.")
+
             # Adjust time vectors to continue from last_end_time
             if len(time) > 0:
                 adjusted_time = [t + last_end_time for t in time]
+
+                #Extend the final vectors
                 all_data_vectors.extend(data)
                 all_time_vectors.extend(adjusted_time)
                 
                 # Update the last_end_time
-                last_end_time = adjusted_time[-1]
+                last_end_time = adjusted_time[-1] if adjusted_time else last_end_time
+        
+     # Debugging: Print all time vectors before duplicate check
+    print(f"All time vectors before duplicate check: {all_time_vectors}")
+
+    # Final check to ensure no duplicate times
+    time_set = set()
+    duplicates = []
+    for time in all_time_vectors:
+        if time in time_set:
+            duplicates.append(time)
+        time_set.add(time)
+
+    if duplicates:
+        print(f"Duplicate times found: {duplicates}")
+        raise ValueError("Duplicate times detected in the final aggregated time vector.")
         
     # Convert aggregated lists to numpy arrays for easier manipulation
     print(len(all_data_vectors))
@@ -281,7 +314,7 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
 
     #Plot Data
     plt.figure()
-    plt.plot(all_time_vectors, all_data_vectors, label=f'Original Data for GRACE-FO C: 2024-05-01')
+    plt.plot(all_time_vectors, all_data_vectors, 'or', label=f'Original Data for GRACE-FO C: 2024-05-01')
     plt.xlabel('Time (seconds)')
     plt.ylabel('Temperature (Celsius)')
     plt.title(f'Original Data for')
