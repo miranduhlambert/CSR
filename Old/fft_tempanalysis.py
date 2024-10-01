@@ -4,18 +4,21 @@ import matplotlib.dates as mdates
 import numpy as np
 import glob 
 from datetime import datetime
-import pandas as pd
+import pandas as pd #used to put data into
 import re
 
 #Function that checks the Product Flag Sequences for Vectorizing data
 def check_product_flag(product_flag):
-    # Your existing logic to determine the key from the flag
-    # Add a print statement for debugging
-    # print(f"Checking product flag: {product_flag}")
-    # Return the appropriate key based on the flag
-    # For example:
-    if product_flag == '00111100000000001000000001000000':
-        return 'taicu'
+    #Define the sequences you are looking for
+    sequences = {
+        'tesu': '00111100000000000100000001000000', #bit 14 product flag; Unknown on Offred; TSU_Y+
+        'taicu':'00111100000000001000000001000000',  #bit 15 product flag; GF ACC_ICU temps; TICUN
+        'tisu': '00111100000000010000000001000000',  #bit 16 product flag; Most likely GF1 ACC_Feeu; TSU_Y-
+    }
+
+    for key in sequences:
+        if product_flag in sequences[key]:
+            return key
     # Handle other flags or return None
     return None
 
@@ -178,8 +181,8 @@ def extract_date_from_filename(filename):
 
 def analyze_files(file_list, marker, product_flag_index, product_column_index):
 
-    nested_data = {
-        'dates': [],
+    df = pd.DataFrame{
+        'date': [],
         'data_vectors': {},
         'time_vectors': {},
         'max_temps_per_day': {},
@@ -239,7 +242,7 @@ def analyze_files(file_list, marker, product_flag_index, product_column_index):
         for key in nested_data['data_vectors'][date]:
             data = nested_data['data_vectors'][date][key]
             time = nested_data['time_vectors'][date][key]
-            
+
             # Check if time and data lengths match
             if len(time) != len(data):
                 ValueError(f"Time and data length mismatch for {date}, key {key}.")
